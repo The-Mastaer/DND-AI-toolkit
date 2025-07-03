@@ -5,14 +5,14 @@ import io
 from PIL import Image, UnidentifiedImageError
 
 
-class NpcSimulatorApp(customtkinter.CTk):
+class NpcSimulatorApp(customtkinter.CTkToplevel):
     """
-    A dedicated application window for selecting and simulating an NPC.
-    Can be launched with a pre-selected NPC or will prompt the user to choose one.
+    A dedicated Toplevel window for selecting and simulating an NPC.
     """
 
-    def __init__(self, api_service, data_manager, npc_data=None):
-        super().__init__()
+    def __init__(self, master, api_service, data_manager, npc_data=None):
+        super().__init__(master)
+        self.master = master
         self.ai = api_service
         self.db = data_manager
         self.npc_data = npc_data
@@ -21,10 +21,10 @@ class NpcSimulatorApp(customtkinter.CTk):
         self.geometry("1000x700")
         self.minsize(800, 600)
 
-        # Main layout: Sidebar | Main Content
-        self.grid_columnconfigure(0, weight=1, minsize=250)  # Sidebar
-        self.grid_columnconfigure(1, weight=3)  # Main content
+        self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
+
+        self.protocol("WM_DELETE_WINDOW", self.go_home)  # Handle window closing
 
         if self.npc_data:
             self._create_simulator_view()
@@ -38,11 +38,9 @@ class NpcSimulatorApp(customtkinter.CTk):
 
     def _create_selection_view(self):
         """Creates the UI for selecting an NPC from a list."""
-        from main_menu_app import MainMenuApp  # Local import
         self._clear_window()
         self.title("NPC Simulator - Select an NPC")
 
-        # Re-apply grid configuration after clearing
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
@@ -86,7 +84,6 @@ class NpcSimulatorApp(customtkinter.CTk):
         npc_name = self.npc_data.get('name', 'Unknown NPC')
         self.title(f"Simulator: {npc_name}")
 
-        # Re-apply grid configuration after clearing
         self.grid_columnconfigure(0, weight=1, minsize=250)
         self.grid_columnconfigure(1, weight=3)
         self.grid_rowconfigure(0, weight=1)
@@ -99,19 +96,17 @@ class NpcSimulatorApp(customtkinter.CTk):
         sidebar = customtkinter.CTkFrame(self, width=250, corner_radius=0)
         sidebar.grid(row=0, column=0, sticky="nsew")
         sidebar.grid_columnconfigure(0, weight=1)
-        sidebar.grid_rowconfigure(2, weight=1)  # Let info frame grow
+        sidebar.grid_rowconfigure(2, weight=1)
 
-        # --- Portrait ---
         portrait_image = self._create_ctk_image_from_data(self.npc_data.get("image_data"), size=(200, 200))
         portrait_label = customtkinter.CTkLabel(sidebar, image=portrait_image,
                                                 text="" if portrait_image else "No Portrait")
         portrait_label.grid(row=0, column=0, padx=10, pady=10)
+        portrait_label.image = portrait_image
 
-        # --- Home Button ---
         home_button = customtkinter.CTkButton(sidebar, text="🏠 Home", command=self.go_home)
         home_button.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
 
-        # --- Info ---
         info_frame = customtkinter.CTkScrollableFrame(sidebar, label_text="Character Info")
         info_frame.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
         info_frame.grid_columnconfigure(0, weight=1)
@@ -132,7 +127,6 @@ class NpcSimulatorApp(customtkinter.CTk):
                                             wraplength=200)
         tags_label.pack(pady=(0, 15), fill="x")
 
-        # --- Roleplaying Tips ---
         customtkinter.CTkLabel(info_frame, text="Roleplaying Cues:",
                                font=customtkinter.CTkFont(size=12, weight="bold")).pack(fill="x")
         tips_textbox = customtkinter.CTkTextbox(info_frame, wrap="word", fg_color="transparent", border_width=0)
@@ -166,17 +160,9 @@ class NpcSimulatorApp(customtkinter.CTk):
         self.simulate_button.grid(row=4, column=0, pady=(10, 0), sticky="ew")
 
     def go_home(self):
-        """Schedules the window to close and the main menu to open."""
-        # Use 'after' to allow the current event loop to finish cleanly
-        # before destroying the window, preventing "invalid command" errors.
-        self.after(10, self._go_home_task)
-
-    def _go_home_task(self):
-        """The actual task of closing the window and opening the main menu."""
-        from main_menu_app import MainMenuApp  # Local import to prevent circular dependency
+        """Closes this window and re-opens the main menu."""
+        self.master.deiconify()
         self.destroy()
-        main_menu = MainMenuApp(data_manager=self.db, api_service=self.ai)
-        main_menu.mainloop()
 
     def start_simulation_thread(self):
         """Starts a new thread for the AI simulation."""
@@ -200,7 +186,7 @@ class NpcSimulatorApp(customtkinter.CTk):
             self.after(0, lambda: self._update_textbox(self.response_textbox, response_text))
         except Exception as e:
             logging.error(f"Simulation failed: {e}")
-            self.after(0, lambda: self._update_textbox(self.response_textbox, f"An error occurred:\n\n{str(e)}"))
+            self.after(0, lambda err=e: self._update_textbox(self.response_textbox, f"An error occurred:\n\n{err}"))
         finally:
             self.after(0, lambda: self.simulate_button.configure(state="normal"))
 

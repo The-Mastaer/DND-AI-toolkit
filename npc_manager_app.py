@@ -5,8 +5,8 @@ import threading
 import io
 import logging
 from PIL import Image, UnidentifiedImageError
+import httpx
 
-# Import constants and options from the config file
 from config import (
     GENDER_OPTIONS, ATTITUDE_OPTIONS, RARITY_OPTIONS, ENVIRONMENT_OPTIONS,
     RACE_OPTIONS, CLASS_OPTIONS, BACKGROUND_OPTIONS
@@ -14,20 +14,19 @@ from config import (
 from npc_simulator_app import NpcSimulatorApp
 
 
-# We remove the direct import of MainMenuApp from here to prevent a circular import
-
-class NpcApp(customtkinter.CTk):
+class NpcApp(customtkinter.CTkToplevel):
     """
-    The main application window for the NPC Manager.
-    Handles the display and interaction for creating and editing NPCs.
+    The main application window for the NPC Manager, now a Toplevel window.
     """
 
-    def __init__(self, data_manager, api_service):
-        super().__init__()
+    def __init__(self, master, data_manager, api_service):
+        super().__init__(master)
+        self.master = master
         self.db = data_manager
         self.ai = api_service
 
         self.title("D&D NPC Manager")
+        self.geometry("1100x750")
         self.minsize(1100, 750)
 
         self.npcs = self.db.load_data()
@@ -44,7 +43,9 @@ class NpcApp(customtkinter.CTk):
         self.update_npc_list()
         self.select_first_npc()
 
-        self.after(100, lambda: self.state('zoomed'))
+        self.protocol("WM_DELETE_WINDOW", self.go_home)
+        self.after(250, lambda: self.iconify())
+        self.after(260, lambda: self.deiconify())
 
     def _create_widgets(self):
         """Initializes and lays out all the main UI components."""
@@ -55,7 +56,7 @@ class NpcApp(customtkinter.CTk):
         """Creates the left sidebar with the NPC list."""
         self.sidebar_frame = customtkinter.CTkFrame(self, width=250, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(3, weight=1)  # Adjust row for list frame
+        self.sidebar_frame.grid_rowconfigure(3, weight=1)
 
         customtkinter.CTkLabel(self.sidebar_frame, text="Your NPCs",
                                font=customtkinter.CTkFont(size=20, weight="bold")).grid(row=0, column=0, padx=20,
@@ -99,8 +100,8 @@ class NpcApp(customtkinter.CTk):
         text_fields_frame = customtkinter.CTkFrame(main_details_frame)
         text_fields_frame.grid(row=0, column=0, padx=(0, 10), sticky="nsew")
         text_fields_frame.grid_columnconfigure(1, weight=1)
-        text_fields_frame.grid_rowconfigure(6, weight=1)  # Roleplaying Tips
-        text_fields_frame.grid_rowconfigure(5, weight=2)  # Backstory
+        text_fields_frame.grid_rowconfigure(6, weight=1)
+        text_fields_frame.grid_rowconfigure(5, weight=2)
 
         self.roster_name_label = self._create_roster_label_field(text_fields_frame, "Name:", 0)
         self.roster_race_class_label = self._create_roster_label_field(text_fields_frame, "Race/Class:", 1)
@@ -153,7 +154,7 @@ class NpcApp(customtkinter.CTk):
         edit_text_frame.grid_rowconfigure(3, weight=1)
         edit_text_frame.grid_rowconfigure(4, weight=2)
         edit_text_frame.grid_rowconfigure(5, weight=1)
-        edit_text_frame.grid_rowconfigure(6, weight=1)  # Roleplaying Tips
+        edit_text_frame.grid_rowconfigure(6, weight=1)
 
         self.workshop_name_entry = self._create_workshop_entry_field(edit_text_frame, "Name:", 0)
         self.workshop_race_entry = self._create_workshop_entry_field(edit_text_frame, "Race/Class:", 1)
@@ -233,15 +234,9 @@ class NpcApp(customtkinter.CTk):
                                                                      sticky="s")
 
     def go_home(self):
-        """Schedules the window to close and the main menu to open."""
-        self.after(10, self._go_home_task)
-
-    def _go_home_task(self):
-        """The actual task of closing the window and opening the main menu."""
-        from main_menu_app import MainMenuApp
+        """Closes this window and re-opens the main menu."""
+        self.master.deiconify()
         self.destroy()
-        main_menu = MainMenuApp(data_manager=self.db, api_service=self.ai)
-        main_menu.mainloop()
 
     def _create_roster_label_field(self, parent, text, row):
         customtkinter.CTkLabel(parent, text=text).grid(row=row, column=0, padx=10, pady=5, sticky="w")
@@ -313,6 +308,7 @@ class NpcApp(customtkinter.CTk):
         self.roster_ctk_image = self._create_ctk_image_from_data(npc_data.get("image_data"))
         self.roster_portrait_label.configure(image=self.roster_ctk_image,
                                              text="" if self.roster_ctk_image else "No Portrait")
+        self.roster_portrait_label.image = self.roster_ctk_image
 
     def populate_workshop_fields(self, npc_data):
         """Fills all the fields in the Workshop tab with data for editing."""
@@ -353,6 +349,7 @@ class NpcApp(customtkinter.CTk):
                                                                    size=(250, 250))
         self.workshop_portrait_label.configure(image=self.workshop_ctk_image,
                                                text="" if self.workshop_ctk_image else "No Portrait")
+        self.workshop_portrait_label.image = self.workshop_ctk_image
 
     def _update_textbox(self, textbox, text, state="disabled"):
         """Safely updates the content of a CTkTextbox."""
@@ -451,13 +448,31 @@ class NpcApp(customtkinter.CTk):
 
     def delete_npc(self):
         """Deletes the currently selected NPC from the database."""
-        if self.selected_npc_name:
-            self.db.delete_npc(self.selected_npc_name)
-            del self.npcs[self.selected_npc_name]
+        if not self.selected_npc_name:
+            return
+
+        # Get the list of names *before* deleting to determine the next selection
+        sorted_names = sorted(self.npcs.keys())
+        current_index = sorted_names.index(self.selected_npc_name)
+
+        # Delete from DB and memory
+        self.db.delete_npc(self.selected_npc_name)
+        del self.npcs[self.selected_npc_name]
+
+        # Update the sidebar list
+        self.update_npc_list()
+
+        # Decide who to select next
+        if not self.npcs:
+            # No NPCs left, clear fields and go to workshop
             self.selected_npc_name = None
             self.populate_roster_fields({})
-            self.update_npc_list()
-            self.select_first_npc()
+            self.go_to_workshop_new()
+        else:
+            # Select the next NPC in the list, or the previous one if it was the last
+            new_index = min(current_index, len(self.npcs) - 1)
+            new_selection = sorted(self.npcs.keys())[new_index]
+            self.select_npc(new_selection)
 
     def upload_portrait(self):
         """Opens a file dialog to upload an image for the NPC portrait."""
@@ -475,15 +490,13 @@ class NpcApp(customtkinter.CTk):
             self._update_textbox(self.workshop_status_textbox, "Error: Image Upload Failed.")
 
     def launch_simulator_app(self):
-        """Closes the manager and launches the simulator with the selected NPC."""
+        """Hides the manager and launches the simulator with the selected NPC."""
         if not self.selected_npc_name:
             logging.warning("Launch simulator clicked with no NPC selected.")
             return
 
-        self.destroy()
         npc_data = self.npcs.get(self.selected_npc_name)
-        sim_app = NpcSimulatorApp(api_service=self.ai, data_manager=self.db, npc_data=npc_data)
-        sim_app.mainloop()
+        self.master.launch_npc_simulator(npc_data=npc_data)
 
     def start_generation_thread(self):
         """Starts a new thread for AI NPC generation to avoid freezing the UI."""
@@ -511,11 +524,13 @@ class NpcApp(customtkinter.CTk):
 
             if self._npc_in_workshop and 'image_data' in self._npc_in_workshop:
                 npc_data['image_data'] = self._npc_in_workshop.get('image_data')
+            npc_data['custom_prompt'] = params['custom_prompt']
 
             self.after(0, self.populate_workshop_fields, npc_data)
         except Exception as e:
             logging.error(f"Generation failed: {e}")
-            self.after(0, lambda: self._update_textbox(self.workshop_status_textbox, f"Generation Error:\n\n{str(e)}"))
+            self.after(0,
+                       lambda err=e: self._update_textbox(self.workshop_status_textbox, f"Generation Error:\n\n{err}"))
         finally:
             self.after(0, lambda: self.generate_button.configure(state="normal"))
 
@@ -541,12 +556,12 @@ class NpcApp(customtkinter.CTk):
             self.after(0, self._update_workshop_image_display)
             self.after(0,
                        lambda: self._update_textbox(self.workshop_status_textbox, "Portrait generated successfully!"))
-        except NotImplementedError as e:
-            logging.warning(f"Image generation skipped: {e}")
+        except PermissionError as e:
+            logging.warning(f"Image generation failed: {e}")
             prompt_text = f"A digital painting portrait of a D&D character: {appearance_prompt}. Fantasy art, character concept, detailed, high quality."
-            message = f"Feature requires a billed account.\n\nTo generate manually, use this prompt in an image generator:\n\n'{prompt_text}'"
-            self.after(0, lambda: self._update_textbox(self.workshop_status_textbox, message))
+            message = f"{e}\n\nTo generate manually, use this prompt in an image generator:\n\n'{prompt_text}'"
+            self.after(0, lambda msg=message: self._update_textbox(self.workshop_status_textbox, msg))
         except Exception as e:
             logging.error(f"Image generation failed in worker: {e}")
-            self.after(0,
-                       lambda: self._update_textbox(self.workshop_status_textbox, f"Image Generation Failed:\n\n{e}"))
+            self.after(0, lambda err=e: self._update_textbox(self.workshop_status_textbox,
+                                                             f"Image Generation Failed:\n\n{err}"))

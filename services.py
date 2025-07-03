@@ -1,8 +1,7 @@
 import sqlite3
 import logging
-import base64
-import httpx
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import json
 import re  # Import the regular expression module
 
@@ -121,35 +120,32 @@ class DataManager:
 
 
 class GeminiService:
-    """Handles interactions with the Gemini API."""
+    """Handles interactions with the Gemini API using the modern SDK."""
 
     def __init__(self, api_key, text_model_name, image_model_name):
         self.api_key = api_key
-        self.text_model_name = text_model_name
-        self.image_model_name = image_model_name
-        self.text_model = None
-        self._is_configured = False
+        self.text_model_id = text_model_name
+        self.image_model_id = image_model_name
+        self.client = None
         self._configure_api()
 
     def _configure_api(self):
-        """Configures the Gemini API if a valid key is provided."""
+        """Configures the Gemini API client if a valid key is provided."""
         if self.is_api_key_valid():
-            genai.configure(api_key=self.api_key)
-            self.text_model = genai.GenerativeModel(self.text_model_name)
-            self._is_configured = True
-            logging.info(f"Gemini API configured successfully with model {self.text_model_name}.")
+            self.client = genai.Client(api_key=self.api_key)
+            logging.info("Gemini API Client configured successfully.")
 
     def is_api_key_valid(self):
         """Checks if the API key is present and not a placeholder."""
-        is_valid = self.api_key and self.api_key != "PASTE_YOUR_GEMINI_API_KEY_HERE"
+        is_valid = self.api_key and self.api_key != "PASTE_YOUR_API_KEY_HERE"
         if not is_valid:
             logging.warning("API Key is missing or is a placeholder.")
         return is_valid
 
     def generate_npc(self, params):
         """Generates an NPC using the Gemini API based on given parameters."""
-        if not self.text_model:
-            raise ValueError("API Key/Model not configured.")
+        if not self.client:
+            raise ValueError("API Client not configured.")
 
         custom_prompt_text = params.get('custom_prompt', '')
         custom_prompt_section = f"\n**Additional Custom Prompt:**\n- {custom_prompt_text}\n" if custom_prompt_text else ""
@@ -157,6 +153,7 @@ class GeminiService:
         prompt = f"""
         You are a creative Dungeon Master assistant. Your task is to generate a compelling D&D NPC based on the following parameters.
         For any parameter set to "Random", you must invent a suitable value.
+        **Keep descriptions concise and to the point (2-3 sentences max for appearance, personality, and backstory).**
         The output MUST be a valid JSON object with the exact keys: "name", "gender", "race_class", "appearance", "personality", "backstory", "plot_hooks", "background", "attitude", "rarity", "race", "character_class", "environment", and "roleplaying_tips".
         The "roleplaying_tips" key should contain a few bullet points on how a DM can portray the character, including notes on their voice, mannerisms, and general demeanor.
         The JSON object must be the only thing in your response. Do not include markdown formatting like ```json or any other explanatory text.
@@ -172,8 +169,12 @@ class GeminiService:
         {custom_prompt_section}
         Generate the NPC now.
         """
-        logging.info("Sending generation request to Gemini.")
-        response = self.text_model.generate_content(prompt)
+        logging.info(f"Sending generation request to model '{self.text_model_id}'.")
+
+        response = self.client.models.generate_content(
+            model=self.text_model_id,
+            contents=prompt
+        )
         raw_text = response.text
 
         logging.info(f"Received raw response from Gemini:\n{raw_text}")
@@ -183,13 +184,11 @@ class GeminiService:
             match = re.search(r"```json\s*([\s\S]+?)\s*```", raw_text)
             if match:
                 json_str = match.group(1)
-                logging.info("Extracted JSON from markdown block.")
             else:
                 start_index = raw_text.find('{')
                 end_index = raw_text.rfind('}') + 1
                 if start_index != -1 and end_index != 0:
                     json_str = raw_text[start_index:end_index]
-                    logging.info("Extracted JSON by finding braces.")
                 else:
                     raise json.JSONDecodeError("No JSON object found in the response.", raw_text, 0)
 
@@ -198,13 +197,12 @@ class GeminiService:
 
         except json.JSONDecodeError as e:
             logging.error(f"Failed to decode JSON from AI response. Error: {e}")
-            logging.error(f"The problematic string was:\n---\n{json_str}\n---")
             raise ValueError(f"The AI returned a malformed description. Please try generating again. Error: {e}") from e
 
     def simulate_reaction(self, npc_data, situation):
         """Simulates an NPC's reaction to a given situation."""
-        if not self.text_model:
-            raise ValueError("API Key/Model not configured.")
+        if not self.client:
+            raise ValueError("API Client not configured.")
 
         full_context = (f"Appearance: {npc_data.get('appearance', 'N/A')}\n"
                         f"Personality: {npc_data.get('personality', 'N/A')}\n"
@@ -220,9 +218,44 @@ class GeminiService:
         **Your Reaction (in character):**
         """
         logging.info(f"Sending simulation request for {npc_data.get('name')}.")
-        response = self.text_model.generate_content(prompt)
+        response = self.client.models.generate_content(
+            model=self.text_model_id,
+            contents=prompt
+        )
         return response.text
 
     def generate_npc_portrait(self, appearance_prompt):
-        """Generates an NPC portrait using the Imagen API."""
-        raise NotImplementedError("Imagen API is only accessible to billed users at this time.")
+        """
+        Generates an NPC portrait using the Imagen API via the `google-genai` SDK.
+        """
+        if not self.client:
+            raise ValueError("API Client not configured.")
+
+        logging.info(f"Sending image generation request to model '{self.image_model_id}'.")
+        prompt = f"A digital painting portrait of a D&D character: {appearance_prompt}. Fantasy art, character concept, detailed, high quality."
+
+        try:
+            result = self.client.models.generate_images(
+                model=self.image_model_id,
+                prompt=prompt,
+                config=dict(
+                    number_of_images=1,
+                    person_generation="ALLOW_ADULT",
+                    aspect_ratio="1:1"
+                )
+            )
+
+            if result.generated_images:
+                # Return the raw bytes of the first generated image
+                return result.generated_images[0].image.image_bytes
+            else:
+                raise Exception("Image generation succeeded, but no image data was returned.")
+
+        except types.PermissionDeniedError as e:
+            logging.error(f"Image generation failed due to a permission error (likely billing): {e}")
+            # Re-raise as a more specific error for the UI to catch
+            raise PermissionError(
+                "Image generation failed. This model often requires a billed Google Cloud account.") from e
+        except Exception as e:
+            logging.error(f"An unexpected error occurred during image generation: {e}")
+            raise

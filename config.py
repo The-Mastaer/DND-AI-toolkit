@@ -5,7 +5,7 @@ import os
 # --- Core Configuration ---
 API_KEY_FILE = "api_key.json"
 DB_FILE = "dnd_toolkit.db"
-TEXT_MODEL_NAME = 'gemini-1.5-flash'
+TEXT_MODEL_NAME = 'gemini-2.5-flash'
 IMAGE_MODEL_NAME = 'imagen-3.0-generate-002'
 
 # --- Logging Configuration ---

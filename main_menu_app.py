@@ -5,14 +5,14 @@ from npc_simulator_app import NpcSimulatorApp
 
 class MainMenuApp(customtkinter.CTk):
     """
-    The initial main menu window for the DM's Toolkit.
-    From here, users can launch different tools.
+    The main application window, which now manages all other windows.
     """
 
     def __init__(self, data_manager, api_service):
         super().__init__()
         self.db = data_manager
         self.ai = api_service
+        self.toplevel_window = None
 
         self.title("DM's AI Toolkit")
         self.geometry("500x400")
@@ -52,14 +52,18 @@ class MainMenuApp(customtkinter.CTk):
                                                   font=customtkinter.CTkFont(size=12), text_color=api_status_color)
         api_status_label.grid(row=4, column=0, padx=20, pady=(10, 20))
 
-    def launch_npc_manager(self):
-        """Closes the main menu and launches the NPC Manager application."""
-        self.destroy()
-        npc_app = NpcApp(self.db, self.ai)
-        npc_app.mainloop()
+    def open_toplevel(self, window_class, **kwargs):
+        """Generic method to open a toplevel window, closing any existing one."""
+        if self.toplevel_window is not None and self.toplevel_window.winfo_exists():
+            self.toplevel_window.destroy()
 
-    def launch_npc_simulator(self):
-        """Closes the main menu and launches the NPC Simulator application."""
-        self.destroy()
-        sim_app = NpcSimulatorApp(api_service=self.ai, data_manager=self.db)
-        sim_app.mainloop()
+        self.withdraw()  # Hide the main menu
+        self.toplevel_window = window_class(master=self, **kwargs)
+
+    def launch_npc_manager(self):
+        """Opens the NPC Manager window."""
+        self.open_toplevel(NpcApp, data_manager=self.db, api_service=self.ai)
+
+    def launch_npc_simulator(self, npc_data=None):
+        """Opens the NPC Simulator window."""
+        self.open_toplevel(NpcSimulatorApp, data_manager=self.db, api_service=self.ai, npc_data=npc_data)
