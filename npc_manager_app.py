@@ -233,7 +233,11 @@ class NpcApp(customtkinter.CTk):
                                                                      sticky="s")
 
     def go_home(self):
-        """Closes this window and re-opens the main menu."""
+        """Schedules the window to close and the main menu to open."""
+        self.after(10, self._go_home_task)
+
+    def _go_home_task(self):
+        """The actual task of closing the window and opening the main menu."""
         from main_menu_app import MainMenuApp
         self.destroy()
         main_menu = MainMenuApp(data_manager=self.db, api_service=self.ai)

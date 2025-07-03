@@ -166,7 +166,13 @@ class NpcSimulatorApp(customtkinter.CTk):
         self.simulate_button.grid(row=4, column=0, pady=(10, 0), sticky="ew")
 
     def go_home(self):
-        """Closes this window and re-opens the main menu."""
+        """Schedules the window to close and the main menu to open."""
+        # Use 'after' to allow the current event loop to finish cleanly
+        # before destroying the window, preventing "invalid command" errors.
+        self.after(10, self._go_home_task)
+
+    def _go_home_task(self):
+        """The actual task of closing the window and opening the main menu."""
         from main_menu_app import MainMenuApp  # Local import to prevent circular dependency
         self.destroy()
         main_menu = MainMenuApp(data_manager=self.db, api_service=self.ai)
