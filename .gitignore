@@ -1,0 +1,8 @@
+# API Keys
+api_key.json
+
+# Database file
+*.db
+
+# Python cache files
+__pycache__/
