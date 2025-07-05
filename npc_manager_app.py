@@ -44,8 +44,12 @@ class NpcApp(customtkinter.CTkToplevel):
         self.select_first_npc()
 
         self.protocol("WM_DELETE_WINDOW", self.go_home)
-        self.after(250, lambda: self.iconify())
-        self.after(260, lambda: self.deiconify())
+
+        # The following lines were a workaround for a rendering glitch caused by
+        # a slow, blocking startup. Now that the startup is non-blocking,
+        # this hack is no longer necessary.
+        # self.after(250, lambda: self.iconify())
+        # self.after(260, lambda: self.deiconify())
 
     def _create_widgets(self):
         """Initializes and lays out all the main UI components."""
