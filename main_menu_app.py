@@ -1,108 +1,127 @@
 import customtkinter
-from npc_manager_app import NpcApp
-from npc_simulator_app import NpcSimulatorApp
-from campaign_manager_app import CampaignManagerApp
+import logging
+from config import SUPPORTED_LANGUAGES
+from world_manager_app import WorldManagerApp
+from settings_app import SettingsApp
+from app_settings import AppSettings
 
 
 class MainMenuApp(customtkinter.CTk):
     """
-    The main application window, which now manages all other windows and active campaign.
+    The main application window, which serves as a clean dashboard displaying
+    the active campaign. All configuration is handled in the SettingsApp.
     """
 
-    def __init__(self, data_manager, api_service):
+    def __init__(self, data_manager, api_service, app_settings):
         super().__init__()
         self.db = data_manager
         self.ai = api_service
+        self.settings = app_settings
         self.toplevel_window = None
 
-        self.campaigns = {}
-        self.active_campaign_name = customtkinter.StringVar()
+        # Apply the theme from settings at startup
+        customtkinter.set_appearance_mode(self.settings.get("theme"))
 
         self.title("DM's AI Toolkit")
-        self.geometry("500x480")
-        self.resizable(False, False)
+        self.geometry("1200x800")
+        self.minsize(900, 600)
 
-        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         self._create_widgets()
-        self.refresh_campaign_list()
+        self.refresh_display()
 
     def _create_widgets(self):
-        main_frame = customtkinter.CTkFrame(self)
-        main_frame.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
-        main_frame.grid_columnconfigure(0, weight=1)
+        # --- Sidebar for Navigation ---
+        self.sidebar_frame = customtkinter.CTkFrame(self, width=200, corner_radius=0)
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsw")
+        self.sidebar_frame.grid_rowconfigure(5, weight=1)  # Push settings to bottom
 
-        title_label = customtkinter.CTkLabel(main_frame, text="DM's AI Toolkit",
-                                             font=customtkinter.CTkFont(size=24, weight="bold"))
-        title_label.grid(row=0, column=0, padx=20, pady=(20, 10))
-        subtitle_label = customtkinter.CTkLabel(main_frame, text="Your all-in-one assistant for epic campaigns.",
-                                                font=customtkinter.CTkFont(size=14))
-        subtitle_label.grid(row=1, column=0, padx=20, pady=(0, 20))
+        customtkinter.CTkLabel(self.sidebar_frame, text="Tools",
+                               font=customtkinter.CTkFont(size=20, weight="bold")).grid(row=0, column=0, padx=20,
+                                                                                        pady=(20, 10))
 
-        customtkinter.CTkLabel(main_frame, text="Active Campaign:", font=customtkinter.CTkFont(weight="bold")).grid(
-            row=2, column=0, padx=20, pady=(10, 0), sticky="w")
-        self.campaign_dropdown = customtkinter.CTkOptionMenu(main_frame, variable=self.active_campaign_name,
-                                                             values=["No Campaigns Found"])
-        self.campaign_dropdown.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
+        self.launch_char_button = customtkinter.CTkButton(self.sidebar_frame, text="Character Manager",
+                                                          state="disabled")  # command=self.launch_character_manager
+        self.launch_char_button.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
 
-        campaign_button = customtkinter.CTkButton(main_frame, text="Manage Campaigns",
-                                                  command=self.launch_campaign_manager)
-        campaign_button.grid(row=4, column=0, padx=20, pady=(5, 20), sticky="ew")
+        # Placeholder for future tools
+        customtkinter.CTkLabel(self.sidebar_frame, text="Coming Soon...",
+                               font=customtkinter.CTkFont(size=12, slant="italic")).grid(row=2, column=0, padx=20,
+                                                                                         pady=20)
 
-        manager_button = customtkinter.CTkButton(main_frame, text="Launch NPC Manager", height=50,
-                                                 command=self.launch_npc_manager)
-        manager_button.grid(row=5, column=0, padx=20, pady=10, sticky="ew")
-        simulator_button = customtkinter.CTkButton(main_frame, text="Launch NPC Simulator", height=50,
-                                                   command=self.launch_npc_simulator)
-        simulator_button.grid(row=6, column=0, padx=20, pady=10, sticky="ew")
+        # Settings and World Management button at the bottom
+        self.manage_worlds_button = customtkinter.CTkButton(self.sidebar_frame, text="Manage Worlds",
+                                                            command=self.launch_world_manager)
+        self.manage_worlds_button.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
 
-        api_status_text = "API Key Loaded" if self.ai.is_api_key_valid() else "API Key Missing!"
-        api_status_color = "green" if self.ai.is_api_key_valid() else "red"
-        api_status_label = customtkinter.CTkLabel(main_frame, text=api_status_text, font=customtkinter.CTkFont(size=12),
-                                                  text_color=api_status_color)
-        api_status_label.grid(row=7, column=0, padx=20, pady=(10, 20))
+        self.settings_button = customtkinter.CTkButton(self.sidebar_frame, text="Settings",
+                                                       command=self.launch_settings)
+        self.settings_button.grid(row=6, column=0, padx=20, pady=20, sticky="s")
 
-    def refresh_campaign_list(self):
-        """Reloads campaigns from the DB and updates the dropdown menu."""
-        self.campaigns = self.db.load_campaigns()
-        campaign_names = sorted(self.campaigns.keys())
-        if not campaign_names:
-            self.campaign_dropdown.configure(values=["No Campaigns Found"])
-            self.active_campaign_name.set("No Campaigns Found")
-        else:
-            current_selection = self.active_campaign_name.get()
-            self.campaign_dropdown.configure(values=campaign_names)
-            if current_selection in campaign_names:
-                self.active_campaign_name.set(current_selection)
+        # --- Main Content Area (The Dashboard) ---
+        self.dashboard_frame = customtkinter.CTkFrame(self)
+        self.dashboard_frame.grid(row=0, column=1, padx=20, pady=20, sticky="nsew")
+
+        self.campaign_title_label = customtkinter.CTkLabel(self.dashboard_frame, text="No Campaign Selected",
+                                                           font=customtkinter.CTkFont(size=28, weight="bold"))
+        self.campaign_title_label.pack(pady=20, padx=40)
+
+        self.campaign_info_label = customtkinter.CTkLabel(self.dashboard_frame,
+                                                          text="Go to Settings to select your active campaign.",
+                                                          font=customtkinter.CTkFont(size=16))
+        self.campaign_info_label.pack(pady=10, padx=40)
+
+    def refresh_display(self):
+        """Updates the dashboard display based on the currently saved settings."""
+        logging.info("Refreshing main display...")
+        self.settings._load_settings()  # Re-load settings from file
+
+        world_id = self.settings.get("active_world_id")
+        campaign_id = self.settings.get("active_campaign_id")
+        lang = self.settings.get("active_language")
+
+        world_name = "N/A"
+        campaign_name = "No Campaign Selected"
+        info_text = "Go to Settings to select your active world and campaign."
+
+        if world_id:
+            world_trans = self.db.get_world_translation(world_id, lang)
+            if world_trans:
+                world_name = world_trans['world_name']
+
+        if campaign_id:
+            all_campaigns = self.db.get_campaigns_for_world(world_id)
+            campaign_data = next((c for c in all_campaigns if c['campaign_id'] == campaign_id), None)
+            if campaign_data:
+                campaign_name = campaign_data['campaign_name']
+                info_text = f"World: {world_name}  |  Language: {SUPPORTED_LANGUAGES[lang]}"
+                self.launch_char_button.configure(state="normal")
             else:
-                self.active_campaign_name.set(campaign_names[0])
+                self.settings.set("active_campaign_id", None)
+                self.settings.save()
+                self.launch_char_button.configure(state="disabled")
+        else:
+            self.launch_char_button.configure(state="disabled")
+
+        self.campaign_title_label.configure(text=campaign_name)
+        self.campaign_info_label.configure(text=info_text)
 
     def open_toplevel(self, window_class, **kwargs):
+        """Creates and manages a new top-level window, ensuring proper focus."""
         if self.toplevel_window is not None and self.toplevel_window.winfo_exists():
             self.toplevel_window.destroy()
-        if window_class not in [CampaignManagerApp]:
-            self.withdraw()
+
+        # Hide the main window while the toplevel is open
+        self.withdraw()
+
         self.toplevel_window = window_class(master=self, **kwargs)
+        # Make the new window modal and give it focus
         self.toplevel_window.grab_set()
 
-    def launch_campaign_manager(self):
-        self.open_toplevel(CampaignManagerApp, data_manager=self.db)
+    def launch_world_manager(self):
+        self.open_toplevel(WorldManagerApp, data_manager=self.db, api_service=self.ai)
 
-    def launch_npc_manager(self):
-        """Opens the NPC Manager, passing the full active campaign data dictionary."""
-        active_campaign_name = self.active_campaign_name.get()
-        campaign_data = self.campaigns.get(active_campaign_name, {})
-        self.open_toplevel(NpcApp, data_manager=self.db, api_service=self.ai, campaign_data=campaign_data)
-
-    def launch_npc_simulator(self, npc_data=None, campaign_data=None):
-        """
-        Opens the NPC Simulator. If campaign_data is not provided (i.e., called
-        from the main menu button), it gets the active one.
-        """
-        if campaign_data is None:
-            active_campaign_name = self.active_campaign_name.get()
-            campaign_data = self.campaigns.get(active_campaign_name, {})
-
-        self.open_toplevel(NpcSimulatorApp, data_manager=self.db, api_service=self.ai, npc_data=npc_data,
-                           campaign_data=campaign_data)
+    def launch_settings(self):
+        self.open_toplevel(SettingsApp, data_manager=self.db, app_settings=self.settings)
