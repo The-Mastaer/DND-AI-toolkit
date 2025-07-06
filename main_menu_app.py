@@ -4,7 +4,7 @@ import threading
 from config import SUPPORTED_LANGUAGES
 from world_manager_app import WorldManagerApp
 from settings_app import SettingsApp
-from app_settings import AppSettings
+from character_manager_app import CharacterManagerApp  # Import the new manager
 from ui_components import ChatBubble
 
 
@@ -35,23 +35,29 @@ class MainMenuApp(customtkinter.CTk):
     def _create_widgets(self):
         self.sidebar_frame = customtkinter.CTkFrame(self, width=200, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsw")
-        self.sidebar_frame.grid_rowconfigure(5, weight=1)
+        self.sidebar_frame.grid_rowconfigure(4, weight=1)  # Adjusted row for spacing
 
         customtkinter.CTkLabel(self.sidebar_frame, text="Tools",
                                font=customtkinter.CTkFont(size=20, weight="bold")).grid(row=0, column=0, padx=20,
                                                                                         pady=(20, 10))
+        # Updated button to call the new launch function
         self.launch_char_button = customtkinter.CTkButton(self.sidebar_frame, text="Character Manager",
+                                                          command=self.launch_character_manager,
                                                           state="disabled")
         self.launch_char_button.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
-        customtkinter.CTkLabel(self.sidebar_frame, text="Coming Soon...",
-                               font=customtkinter.CTkFont(size=12, slant="italic")).grid(row=2, column=0, padx=20,
-                                                                                         pady=20)
+
         self.manage_worlds_button = customtkinter.CTkButton(self.sidebar_frame, text="Manage Worlds",
                                                             command=self.launch_world_manager)
-        self.manage_worlds_button.grid(row=3, column=0, padx=20, pady=10, sticky="ew")
+        self.manage_worlds_button.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
+
+        # Added a label for future tools as per the roadmap
+        customtkinter.CTkLabel(self.sidebar_frame, text="More Tools Coming Soon...",
+                               font=customtkinter.CTkFont(size=12, slant="italic")).grid(row=3, column=0, padx=20,
+                                                                                         pady=20)
+
         self.settings_button = customtkinter.CTkButton(self.sidebar_frame, text="Settings",
                                                        command=self.launch_settings)
-        self.settings_button.grid(row=6, column=0, padx=20, pady=20, sticky="s")
+        self.settings_button.grid(row=5, column=0, padx=20, pady=20, sticky="s")  # Adjusted row
 
         self.main_frame = customtkinter.CTkFrame(self, fg_color="transparent")
         self.main_frame.grid(row=0, column=1, sticky="nsew")
@@ -163,7 +169,7 @@ class MainMenuApp(customtkinter.CTk):
             if campaign_data:
                 campaign_name = campaign_data['campaign_name']
                 info_text = f"World: {world_name}  |  Language: {SUPPORTED_LANGUAGES.get(lang, lang)}"
-                self.launch_char_button.configure(state="normal")
+                self.launch_char_button.configure(state="normal")  # Button is enabled here
             else:
                 self.settings.set("active_campaign_id", None);
                 self.settings.save()
@@ -187,3 +193,29 @@ class MainMenuApp(customtkinter.CTk):
 
     def launch_settings(self):
         self.open_toplevel(SettingsApp, data_manager=self.db, app_settings=self.settings)
+
+    def launch_character_manager(self):
+        """
+        Gathers necessary data and launches the unified Character Manager.
+        """
+        world_id = self.settings.get("active_world_id")
+        campaign_id = self.settings.get("active_campaign_id")
+        lang = self.settings.get("active_language")
+
+        if not world_id or not campaign_id:
+            logging.warning("Character Manager launch attempted without active world/campaign.")
+            return
+
+        world_data = self.db.get_world_translation(world_id, lang)
+        all_campaigns = self.db.get_campaigns_for_world(world_id)
+        campaign_data = next((c for c in all_campaigns if c['campaign_id'] == campaign_id), None)
+
+        if not world_data or not campaign_data:
+            logging.error("Could not retrieve active world/campaign data for Character Manager.")
+            return
+
+        self.open_toplevel(CharacterManagerApp,
+                           data_manager=self.db,
+                           api_service=self.ai,
+                           world_data=world_data,
+                           campaign_data=campaign_data)

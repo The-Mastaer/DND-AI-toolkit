@@ -7,10 +7,10 @@ API_KEY_FILE = "api_key.json"
 DB_FILE = "dnd_toolkit.db"
 
 # --- Default AI Model Configuration ---
-DEFAULT_TEXT_MODEL = 'gemini-2.5-flash'
-DEFAULT_IMAGE_MODEL = 'imagen-3.0-generate-002'
-AVAILABLE_TEXT_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-pro', 'gemini-1.5-flash']
-AVAILABLE_IMAGE_MODELS = ['imagen-4.0-generate-preview-06-06', 'imagen-3.0-generate-002']
+DEFAULT_TEXT_MODEL = 'gemini-1.5-flash'
+DEFAULT_IMAGE_MODEL = 'imagen-3'
+AVAILABLE_TEXT_MODELS = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro']
+AVAILABLE_IMAGE_MODELS = ['imagen-3', 'imagen-2']
 
 
 # --- Language Configuration ---
@@ -23,6 +23,26 @@ SUPPORTED_LANGUAGES = {
     "it": "Italiano",
     "pl": "Polski"
 }
+
+# --- NPC Generator Options ---
+GENDER_OPTIONS = ["Any", "Male", "Female", "Non-binary"]
+ATTITUDE_OPTIONS = ["Any", "Friendly", "Indifferent", "Hostile"]
+RARITY_OPTIONS = ["Any", "Common", "Uncommon", "Rare"]
+ENVIRONMENT_OPTIONS = ["Any", "Urban", "Wilderness", "Dungeon", "Aquatic", "Planar"]
+RACE_OPTIONS = [
+    "Any", "Human", "Elf", "Dwarf", "Halfling", "Gnome", "Half-Elf",
+    "Half-Orc", "Tiefling", "Dragonborn", "Aasimar", "Goblin", "Orc"
+]
+CLASS_OPTIONS = [
+    "Any", "Fighter", "Rogue", "Wizard", "Cleric", "Ranger", "Barbarian",
+    "Paladin", "Sorcerer", "Warlock", "Monk", "Druid", "Bard", "Artificer"
+]
+BACKGROUND_OPTIONS = [
+    "Any", "Acolyte", "Charlatan", "Criminal", "Entertainer", "Folk Hero",
+    "Guild Artisan", "Hermit", "Noble", "Outlander", "Sage", "Sailor",
+    "Soldier", "Urchin"
+]
+
 
 # --- Default Prompts ---
 # These are the default prompts. Users can override them in settings.
@@ -147,6 +167,16 @@ USER'S QUESTION:
 {user_question}
 
 Your Answer:
+"""
+
+DEFAULT_NPC_PORTRAIT_PROMPT = """
+Create a high-quality, vibrant, and detailed fantasy character portrait based on the following description.
+The style should be painterly and realistic, suitable for a Dungeons & Dragons character.
+Focus on the face, expression, and key features mentioned. The character should be the central focus.
+
+--- CHARACTER APPEARANCE ---
+{appearance_prompt}
+--- END OF DESCRIPTION ---
 """
 
 # --- Logging Configuration ---
