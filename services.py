@@ -5,6 +5,7 @@ from google.genai import types
 from google.api_core import exceptions as google_exceptions
 import json
 import re
+import pathlib
 
 
 # No more prompt imports needed! The service is fully dynamic.
@@ -603,12 +604,15 @@ class DataManager:
 
 
 class GeminiService:
-    def __init__(self, api_key, app_settings):
+    def __init__(self, api_key, app_settings, data_manager):
         self.api_key = api_key
         self.settings = app_settings
+        self.db = data_manager
         self.text_model_name = self.settings.get("text_model")
         self.image_model_name = self.settings.get("image_model")
         self.client = None
+        self.chat_sessions = {}
+        self.srd_pdf_cache = None  # Cache for the loaded PDF file
         self._configure_api()
 
     def _configure_api(self):
@@ -619,6 +623,111 @@ class GeminiService:
             except Exception as e:
                 logging.error(f"Failed to instantiate Gemini API client: {e}")
                 self.client = None
+
+    def get_or_start_chat_session(self, persona):
+        if persona not in self.chat_sessions:
+            if not self.client: return None
+            self.text_model_name = self.settings.get("text_model")
+            self.chat_sessions[persona] = self.client.chats.create(model=self.text_model_name)
+            logging.info(f"New chat session started for '{persona}' with model '{self.text_model_name}'.")
+        return self.chat_sessions[persona]
+
+    def clear_chat_session(self, persona):
+        if persona in self.chat_sessions:
+            del self.chat_sessions[persona]
+            logging.info(f"Chat history for '{persona}' cleared.")
+
+    def send_chat_message(self, user_prompt, persona):
+        if not self.client:
+            raise ConnectionError("Gemini client not initialized.")
+
+        if persona == "rules_lawyer":
+            return self._handle_rules_lawyer_query(user_prompt)
+
+        chat_session = self.get_or_start_chat_session(persona)
+        if not chat_session:
+            raise ConnectionError("Chat session not initialized.")
+
+        full_prompt = self._build_prompt_with_context(user_prompt, persona)
+        logging.info(f"Sending chat message with persona '{persona}'.")
+        response = chat_session.send_message(full_prompt)
+        return response.text
+
+    def _cache_srd_file(self):
+        """Loads the SRD PDF into memory if it's not already cached."""
+        srd_path_str = self.settings.get("srd_pdf_path")
+        if not srd_path_str:
+            return "Error: SRD PDF path is not set in Settings."
+
+        srd_path = pathlib.Path(srd_path_str)
+        if not srd_path.exists():
+            return f"Error: SRD PDF file not found at '{srd_path_str}'."
+
+        if self.srd_pdf_cache is None:
+            logging.info(f"Caching SRD PDF from: {srd_path}")
+            try:
+                self.srd_pdf_cache = types.Part.from_bytes(
+                    data=srd_path.read_bytes(),
+                    mime_type='application/pdf'
+                )
+            except Exception as e:
+                logging.error(f"Failed to read or cache PDF: {e}")
+                return f"Error: Failed to read PDF file. Check permissions."
+        return None  # No error
+
+    def _handle_rules_lawyer_query(self, user_prompt):
+        """Handles a query for the Rules Lawyer using the cached PDF."""
+        cache_error = self._cache_srd_file()
+        if cache_error:
+            return cache_error
+
+        logging.info("Processing Rules Lawyer query with cached PDF.")
+        prompt_template = self.settings.get("prompts", {}).get("rules_lawyer")
+
+        try:
+            # The prompt is a combination of the system instruction, the user's question, and the cached PDF file.
+            final_contents = [
+                prompt_template.format(srd_context="The user has provided the SRD PDF.", user_question=user_prompt),
+                self.srd_pdf_cache
+            ]
+            response = self.client.models.generate_content(
+                model=self.text_model_name,
+                contents=final_contents,
+            )
+            return response.text
+        except Exception as e:
+            logging.error(f"Error processing PDF for Rules Lawyer: {e}")
+            return f"Error during AI generation: {e}"
+
+    def _build_prompt_with_context(self, user_prompt, persona):
+        """Constructs the full prompt including system instructions and context."""
+        if persona == "lore_master":
+            world_id = self.settings.get("active_world_id")
+            campaign_id = self.settings.get("active_campaign_id")
+            lang = self.settings.get("active_language")
+
+            world_lore, party_info, session_history = "", "", ""
+
+            if world_id:
+                world_trans = self.db.get_world_translation(world_id, lang)
+                if world_trans: world_lore = world_trans.get('world_lore', '')
+
+            if campaign_id:
+                all_campaigns = self.db.get_campaigns_for_world(world_id)
+                campaign = next((c for c in all_campaigns if c['campaign_id'] == campaign_id), None)
+                if campaign:
+                    party_info = campaign.get('party_info', '')
+                    session_history = campaign.get('session_history', '')
+
+            prompt_template = self.settings.get("prompts", {}).get("lore_master")
+            return prompt_template.format(
+                world_lore=world_lore,
+                party_info=party_info,
+                session_history=session_history,
+                user_question=user_prompt
+            )
+
+        return user_prompt
 
     def _is_api_key_format_valid(self):
         is_valid = self.api_key and "INSERT" not in self.api_key and len(self.api_key) > 10
@@ -724,7 +833,7 @@ class GeminiService:
             world_id = campaign_data.get('world_id')
             lang = campaign_data.get('language')
             if world_id and lang:
-                world_trans = self.get_world_translation(world_id, lang)
+                world_trans = self.db.get_world_translation(world_id, lang)
                 if world_trans:
                     world_lore = world_trans.get('world_lore', '')
 

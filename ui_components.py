@@ -1,4 +1,5 @@
 import customtkinter
+import textwrap
 
 class ConfirmationDialog(customtkinter.CTkToplevel):
     """
@@ -43,3 +44,26 @@ class ConfirmationDialog(customtkinter.CTkToplevel):
     def on_no(self):
         self._result = False
         self.destroy()
+
+class ChatBubble(customtkinter.CTkFrame):
+    """A custom chat bubble widget."""
+    def __init__(self, master, message, role="user"):
+        super().__init__(master, fg_color="transparent")
+
+        # Determine alignment and color based on the role
+        if role == "user":
+            justify = "right"
+            anchor = "e"
+            color = customtkinter.ThemeManager.theme["CTkButton"]["fg_color"]
+        else: # model
+            justify = "left"
+            anchor = "w"
+            color = customtkinter.ThemeManager.theme["CTkTextbox"]["fg_color"]
+
+        # Wrap the text to fit the bubble
+        wrapped_text = textwrap.fill(message, width=100)
+
+        label = customtkinter.CTkLabel(self, text=wrapped_text, fg_color=color, corner_radius=10, justify=justify, wraplength=800)
+        label.pack(side=justify, pady=5, padx=10, ipady=5, ipadx=5)
+
+        self.pack(anchor=anchor, fill="x", padx=10, pady=2)

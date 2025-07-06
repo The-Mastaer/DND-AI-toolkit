@@ -3,6 +3,7 @@ import logging
 import os
 from config import (
     DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL,
+    DEFAULT_LORE_MASTER_PROMPT, DEFAULT_RULES_LAWYER_PROMPT,
     DEFAULT_NPC_GENERATION_PROMPT, DEFAULT_TRANSLATION_PROMPT,
     DEFAULT_NPC_SIMULATION_SHORT_PROMPT, DEFAULT_NPC_SIMULATION_LONG_PROMPT
 )
@@ -28,7 +29,10 @@ class AppSettings:
             "text_model": DEFAULT_TEXT_MODEL,
             "image_model": DEFAULT_IMAGE_MODEL,
             "theme": "System",
+            "srd_pdf_path": "",
             "prompts": {
+                "lore_master": DEFAULT_LORE_MASTER_PROMPT,
+                "rules_lawyer": DEFAULT_RULES_LAWYER_PROMPT,
                 "npc_generation": DEFAULT_NPC_GENERATION_PROMPT,
                 "translation": DEFAULT_TRANSLATION_PROMPT,
                 "npc_simulation_short": DEFAULT_NPC_SIMULATION_SHORT_PROMPT,
@@ -37,7 +41,10 @@ class AppSettings:
         }
 
     def _load_settings(self):
-        """Loads settings from the JSON file, applying defaults for missing keys."""
+        """
+        Loads settings from the JSON file, intelligently merging them with
+        defaults to ensure all keys are present and new defaults are added.
+        """
         defaults = self._get_defaults()
         if not os.path.exists(SETTINGS_FILE):
             logging.info(f"'{SETTINGS_FILE}' not found. Creating with default settings.")
@@ -49,12 +56,19 @@ class AppSettings:
             with open(SETTINGS_FILE, 'r') as f:
                 user_settings = json.load(f)
 
-            # Merge user settings with defaults to ensure all keys are present
-            defaults.update(user_settings)
-            if 'prompts' in user_settings:
-                defaults['prompts'].update(user_settings['prompts'])
+            # This is the corrected deep merge logic.
+            # Start with the full set of default prompts.
+            merged_prompts = defaults['prompts'].copy()
+            # Let the user's saved prompts override the defaults.
+            if 'prompts' in user_settings and isinstance(user_settings['prompts'], dict):
+                merged_prompts.update(user_settings['prompts'])
 
-            logging.info(f"Settings loaded from '{SETTINGS_FILE}'.")
+            # Update the main settings object
+            defaults.update(user_settings)
+            # Place the correctly merged prompts back into the settings.
+            defaults['prompts'] = merged_prompts
+
+            logging.info(f"Settings loaded and merged from '{SETTINGS_FILE}'.")
             return defaults
         except (IOError, json.JSONDecodeError) as e:
             logging.error(f"Error loading settings from {SETTINGS_FILE}: {e}. Using defaults.")

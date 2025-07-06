@@ -17,7 +17,8 @@ def main():
     data_manager = DataManager(db_filepath=config.DB_FILE)
     gemini_service = GeminiService(
         api_key=api_key,
-        app_settings=app_settings
+        app_settings=app_settings,
+        data_manager=data_manager
     )
 
     # Pass all dependencies to the main app
