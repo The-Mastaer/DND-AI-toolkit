@@ -1,11 +1,12 @@
-# API Keys
-api_key.json
-
-# supabase
-supabase_creds.json
-
-# Database file
-*.db
-
-# Python cache files
+# Python cache
 __pycache__/
+*.pyc
+
+# Environment variables
+.env
+
+# IDE settings
+.idea/
+
+# Flet build artifacts
+/build/
