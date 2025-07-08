@@ -4,7 +4,8 @@ import os
 
 # --- Core Static Configuration ---
 API_KEY_FILE = "api_key.json"
-DB_FILE = "dnd_toolkit.db"
+SUPABASE_CREDS_FILE = "supabase_creds.json"  # New file for credentials
+DB_FILE = "dnd_toolkit.db"  # This will no longer be used by DataManager, but we'll keep it for now
 
 # --- Default AI Model Configuration ---
 DEFAULT_TEXT_MODEL = 'gemini-1.5-flash'
@@ -194,3 +195,25 @@ def load_api_key():
     except (IOError, json.JSONDecodeError) as e:
         logging.error(f"Error loading API key from {API_KEY_FILE}: {e}")
         return None
+
+def load_supabase_credentials():
+    """Loads Supabase URL and Key from a JSON file."""
+    if not os.path.exists(SUPABASE_CREDS_FILE):
+        logging.warning(f"'{SUPABASE_CREDS_FILE}' not found. Please create it with your Supabase credentials.")
+        # Create a template file for the user
+        template = {"supabase_url": "INSERT_YOUR_SUPABASE_URL", "supabase_key": "INSERT_YOUR_SUPABASE_KEY"}
+        with open(SUPABASE_CREDS_FILE, 'w') as f:
+            json.dump(template, f, indent=4)
+        return None, None
+    try:
+        with open(SUPABASE_CREDS_FILE, 'r') as f:
+            data = json.load(f)
+            url = data.get("supabase_url")
+            key = data.get("supabase_key")
+            if not url or not key or "INSERT" in url or "INSERT" in key:
+                logging.warning(f"Supabase credentials in '{SUPABASE_CREDS_FILE}' seem to be placeholders or missing.")
+                return None, None
+            return url, key
+    except (IOError, json.JSONDecodeError) as e:
+        logging.error(f"Error loading credentials from {SUPABASE_CREDS_FILE}: {e}")
+        return None, None

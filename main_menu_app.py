@@ -1,221 +1,112 @@
-import customtkinter
 import logging
 import threading
+import flet as ft
 from config import SUPPORTED_LANGUAGES
-from world_manager_app import WorldManagerApp
-from settings_app import SettingsApp
-from character_manager_app import CharacterManagerApp  # Import the new manager
 from ui_components import ChatBubble
+from world_manager_app import WorldManagerApp
 
-
-class MainMenuApp(customtkinter.CTk):
-    """
-    The main application window, which serves as a chat-centric dashboard.
-    """
-
+class MainMenuApp(ft.Row):
     def __init__(self, data_manager, api_service, app_settings):
-        super().__init__()
+        super().__init__(expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
         self.db = data_manager
         self.ai = api_service
         self.settings = app_settings
-        self.toplevel_window = None
+        self.launch_char_button = ft.ElevatedButton(text="Character Manager", icon=ft.Icons.PEOPLE_OUTLINED, on_click=self.launch_character_manager, disabled=True)
+        self.manage_worlds_button = ft.ElevatedButton(text="Manage Worlds", icon=ft.Icons.PUBLIC, on_click=self.launch_world_manager)
+        self.settings_button = ft.ElevatedButton(text="Settings", icon=ft.Icons.SETTINGS_OUTLINED, on_click=self.launch_settings)
+        self.campaign_title_label = ft.Text("No Campaign Selected", size=24, weight=ft.FontWeight.BOLD)
+        self.campaign_info_label = ft.Text("Go to Settings to select a campaign.", size=14, italic=True)
+        self.lore_master_history = ft.ListView(expand=True, spacing=10, auto_scroll=True)
+        self.rules_lawyer_history = ft.ListView(expand=True, spacing=10, auto_scroll=True)
+        self.lore_master_input = ft.TextField(hint_text="Ask the Lore Master...", on_submit=lambda e: self.send_message(e.control.value, self.lore_master_history, "lore_master"), expand=True)
+        self.rules_lawyer_input = ft.TextField(hint_text="Ask the Rules Lawyer...", on_submit=lambda e: self.send_message(e.control.value, self.rules_lawyer_history, "rules_lawyer"), expand=True)
+        sidebar = ft.Column([ft.Text("Tools", size=20, weight=ft.FontWeight.BOLD), self.launch_char_button, self.manage_worlds_button, ft.Text("More Tools Coming Soon...", italic=True), ft.Container(expand=True), self.settings_button], width=220, spacing=10, alignment=ft.MainAxisAlignment.START, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
+        chat_tabs = ft.Tabs(selected_index=0, animation_duration=300, tabs=[ft.Tab(text="Lore Master", icon=ft.Icons.BOOK_OUTLINED, content=self._create_chat_ui(self.lore_master_history, self.lore_master_input, "lore_master")), ft.Tab(text="Rules Lawyer", icon=ft.Icons.GAVEL_OUTLINED, content=self._create_chat_ui(self.rules_lawyer_history, self.rules_lawyer_input, "rules_lawyer")), ft.Tab(text="NPC Actor", icon=ft.Icons.THEATER_COMEDY, content=ft.Column([ft.Text("NPC Actor Coming Soon!")], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER))], expand=True)
+        main_content = ft.Column([ft.Container(content=ft.Row([self.campaign_title_label, self.campaign_info_label], vertical_alignment=ft.CrossAxisAlignment.END), padding=ft.padding.only(left=20, top=10, bottom=10)), chat_tabs], expand=True)
+        self.controls = [ft.Card(content=sidebar, elevation=10), main_content]
 
-        customtkinter.set_appearance_mode(self.settings.get("theme"))
-
-        self.title("DM's AI Toolkit")
-        self.state('zoomed')
-        self.minsize(1000, 700)
-
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        self._create_widgets()
+    def did_mount(self):
         self.refresh_display()
 
-    def _create_widgets(self):
-        self.sidebar_frame = customtkinter.CTkFrame(self, width=200, corner_radius=0)
-        self.sidebar_frame.grid(row=0, column=0, sticky="nsw")
-        self.sidebar_frame.grid_rowconfigure(4, weight=1)  # Adjusted row for spacing
+    def _create_chat_ui(self, history_listview, input_textfield, persona):
+        return ft.Column([history_listview, ft.Row([input_textfield, ft.IconButton(icon=ft.Icons.SEND, tooltip="Send", on_click=lambda e: self.send_message(input_textfield.value, history_listview, persona)), ft.IconButton(icon=ft.Icons.CLEAR, tooltip="Clear Chat", on_click=lambda e: self.clear_chat(history_listview, persona))], alignment=ft.MainAxisAlignment.CENTER)], expand=True)
 
-        customtkinter.CTkLabel(self.sidebar_frame, text="Tools",
-                               font=customtkinter.CTkFont(size=20, weight="bold")).grid(row=0, column=0, padx=20,
-                                                                                        pady=(20, 10))
-        # Updated button to call the new launch function
-        self.launch_char_button = customtkinter.CTkButton(self.sidebar_frame, text="Character Manager",
-                                                          command=self.launch_character_manager,
-                                                          state="disabled")
-        self.launch_char_button.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
-
-        self.manage_worlds_button = customtkinter.CTkButton(self.sidebar_frame, text="Manage Worlds",
-                                                            command=self.launch_world_manager)
-        self.manage_worlds_button.grid(row=2, column=0, padx=20, pady=10, sticky="ew")
-
-        # Added a label for future tools as per the roadmap
-        customtkinter.CTkLabel(self.sidebar_frame, text="More Tools Coming Soon...",
-                               font=customtkinter.CTkFont(size=12, slant="italic")).grid(row=3, column=0, padx=20,
-                                                                                         pady=20)
-
-        self.settings_button = customtkinter.CTkButton(self.sidebar_frame, text="Settings",
-                                                       command=self.launch_settings)
-        self.settings_button.grid(row=5, column=0, padx=20, pady=20, sticky="s")  # Adjusted row
-
-        self.main_frame = customtkinter.CTkFrame(self, fg_color="transparent")
-        self.main_frame.grid(row=0, column=1, sticky="nsew")
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(1, weight=1)
-
-        self.top_bar_frame = customtkinter.CTkFrame(self.main_frame, height=40)
-        self.top_bar_frame.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 0))
-        self.top_bar_frame.grid_columnconfigure(0, weight=1)
-
-        self.campaign_title_label = customtkinter.CTkLabel(self.top_bar_frame, text="No Campaign Selected",
-                                                           font=customtkinter.CTkFont(size=24, weight="bold"))
-        self.campaign_title_label.pack(side="left", padx=20, pady=5)
-
-        self.campaign_info_label = customtkinter.CTkLabel(self.top_bar_frame,
-                                                          text="Go to Settings to select a campaign.",
-                                                          font=customtkinter.CTkFont(size=14))
-        self.campaign_info_label.pack(side="left", padx=20, pady=5)
-
-        self.chat_tab_view = customtkinter.CTkTabview(self.main_frame)
-        self.chat_tab_view.grid(row=1, column=0, sticky="nsew", padx=20, pady=20)
-        self.chat_tab_view.add("Lore Master")
-        self.chat_tab_view.add("Rules Lawyer")
-        self.chat_tab_view.add("NPC Actor")
-
-        self.lore_master_chat_frame = self._create_chat_ui(self.chat_tab_view.tab("Lore Master"), "lore_master")
-        self.rules_lawyer_chat_frame = self._create_chat_ui(self.chat_tab_view.tab("Rules Lawyer"), "rules_lawyer")
-        customtkinter.CTkLabel(self.chat_tab_view.tab("NPC Actor"), text="NPC Actor Coming Soon!").pack(pady=50)
-
-    def _create_chat_ui(self, parent_tab, persona):
-        parent_tab.grid_columnconfigure(0, weight=1)
-        parent_tab.grid_rowconfigure(0, weight=1)
-
-        chat_history_frame = customtkinter.CTkScrollableFrame(parent_tab, label_text="Conversation")
-        chat_history_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=10, pady=10)
-
-        input_frame = customtkinter.CTkFrame(parent_tab, fg_color="transparent")
-        input_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
-        input_frame.grid_columnconfigure(0, weight=1)
-
-        chat_entry = customtkinter.CTkEntry(input_frame,
-                                            placeholder_text=f"Ask the {persona.replace('_', ' ').title()}...")
-        chat_entry.grid(row=0, column=0, sticky="ew", padx=(0, 10))
-        chat_entry.bind("<Return>",
-                        lambda event, e=chat_entry, h=chat_history_frame, p=persona: self.send_message(event, e, h, p))
-
-        send_button = customtkinter.CTkButton(input_frame, text="Send", width=100,
-                                              command=lambda e=chat_entry, h=chat_history_frame,
-                                                             p=persona: self.send_message(None, e, h, p))
-        send_button.grid(row=0, column=1, sticky="e")
-
-        clear_button = customtkinter.CTkButton(input_frame, text="Clear", width=70, fg_color="gray50",
-                                               hover_color="gray30",
-                                               command=lambda h=chat_history_frame, p=persona: self.clear_chat(h, p))
-        clear_button.grid(row=0, column=2, padx=(10, 0), sticky="e")
-
-        return chat_history_frame
-
-    def send_message(self, event, entry_widget, history_frame, persona):
-        user_message = entry_widget.get()
-        if not user_message.strip():
-            return
-
-        entry_widget.delete(0, "end")
-        ChatBubble(history_frame, message=user_message, role="user")
-
-        thinking_bubble = ChatBubble(history_frame, message="Thinking...", role="model")
-        self.update_idletasks()
-        history_frame._parent_canvas.yview_moveto(1.0)
-
-        threading.Thread(target=self.get_ai_response, args=(user_message, persona, thinking_bubble),
-                         daemon=True).start()
+    def send_message(self, message, history_control, persona):
+        user_message = message.strip()
+        if not user_message: return
+        if persona == "lore_master": self.lore_master_input.value = ""
+        elif persona == "rules_lawyer": self.rules_lawyer_input.value = ""
+        history_control.controls.append(ChatBubble(message=user_message, role="user"))
+        thinking_bubble = ChatBubble(message="Thinking...", role="model")
+        history_control.controls.append(thinking_bubble)
+        self.update()
+        threading.Thread(target=self.get_ai_response, args=(user_message, persona, thinking_bubble), daemon=True).start()
 
     def get_ai_response(self, user_message, persona, thinking_bubble):
         try:
             response_text = self.ai.send_chat_message(user_message, persona)
-            self.after(0, lambda: thinking_bubble.destroy())
-            self.after(0, lambda: ChatBubble(thinking_bubble.master, message=response_text, role="model"))
-            self.after(0, lambda: thinking_bubble.master._parent_canvas.yview_moveto(1.0))
+            self.page.call_soon(lambda: self.update_chat_bubble(thinking_bubble, response_text))
         except Exception as e:
             logging.error(f"Error getting AI response: {e}")
-            self.after(0, lambda: thinking_bubble.destroy())
-            self.after(0, lambda: ChatBubble(thinking_bubble.master, message=f"Error: {e}", role="model"))
+            self.page.call_soon(lambda: self.update_chat_bubble(thinking_bubble, f"Error: {e}"))
 
-    def clear_chat(self, history_frame, persona):
-        for widget in history_frame.winfo_children():
-            widget.destroy()
+    def update_chat_bubble(self, bubble, new_text):
+        bubble.update_message(new_text)
+        self.update()
+
+    def clear_chat(self, history_control, persona):
+        history_control.controls.clear()
         self.ai.clear_chat_session(persona)
         logging.info(f"Chat history for '{persona}' cleared.")
+        self.update()
 
     def refresh_display(self):
         logging.info("Refreshing main display...")
         self.settings._load_settings()
-
         world_id = self.settings.get("active_world_id")
         campaign_id = self.settings.get("active_campaign_id")
         lang = self.settings.get("active_language")
-
         world_name, campaign_name = "N/A", "No Campaign Selected"
         info_text = "Go to Settings to select your active world and campaign."
+        char_button_disabled = True
+        if world_id and self.db:
+            try:
+                world_trans = self.db.get_world_translation(world_id, lang)
+                if world_trans: world_name = world_trans.get('world_name', 'N/A')
+                if campaign_id:
+                    all_campaigns = self.db.get_campaigns_for_world(world_id)
+                    campaign_data = next((c for c in all_campaigns if c['campaign_id'] == campaign_id), None)
+                    if campaign_data:
+                        campaign_name = campaign_data['campaign_name']
+                        info_text = f"World: {world_name}  |  Language: {SUPPORTED_LANGUAGES.get(lang, lang)}"
+                        char_button_disabled = False
+                    else:
+                        self.settings.set("active_campaign_id", None); self.settings.save()
+            except Exception as e:
+                logging.error(f"Database connection failed during refresh: {e}")
+                info_text = "Error: Could not connect to the database."
+        self.campaign_title_label.value = campaign_name
+        self.campaign_info_label.value = info_text
+        self.launch_char_button.disabled = char_button_disabled
+        if self.page: self.update()
 
-        if world_id:
-            world_trans = self.db.get_world_translation(world_id, lang)
-            if world_trans: world_name = world_trans['world_name']
+    async def launch_world_manager(self, e):
+        """Creates and displays the World Manager dialog using a robust async lifecycle."""
+        if self.page:
+            world_manager_dialog = WorldManagerApp(self, self.db, self.ai)
+            self.page.dialog = world_manager_dialog
+            world_manager_dialog.open = True
+            await self.page.update_async() # Draw the empty dialog
+            await world_manager_dialog.load_and_display_worlds() # THEN populate it
 
-        if campaign_id:
-            all_campaigns = self.db.get_campaigns_for_world(world_id)
-            campaign_data = next((c for c in all_campaigns if c['campaign_id'] == campaign_id), None)
-            if campaign_data:
-                campaign_name = campaign_data['campaign_name']
-                info_text = f"World: {world_name}  |  Language: {SUPPORTED_LANGUAGES.get(lang, lang)}"
-                self.launch_char_button.configure(state="normal")  # Button is enabled here
-            else:
-                self.settings.set("active_campaign_id", None);
-                self.settings.save()
-                self.launch_char_button.configure(state="disabled")
-        else:
-            self.launch_char_button.configure(state="disabled")
+    def launch_settings(self, e):
+        if self.page:
+            self.page.snack_bar = ft.SnackBar(ft.Text("Settings App not yet implemented in Flet."))
+            self.page.snack_bar.open = True
+            self.page.update()
 
-        self.title(f"DM's AI Toolkit - {campaign_name}")
-        self.campaign_title_label.configure(text=campaign_name)
-        self.campaign_info_label.configure(text=info_text)
-
-    def open_toplevel(self, window_class, **kwargs):
-        if self.toplevel_window is not None and self.toplevel_window.winfo_exists():
-            self.toplevel_window.destroy()
-
-        self.toplevel_window = window_class(master=self, **kwargs)
-        self.toplevel_window.grab_set()
-
-    def launch_world_manager(self):
-        self.open_toplevel(WorldManagerApp, data_manager=self.db, api_service=self.ai)
-
-    def launch_settings(self):
-        self.open_toplevel(SettingsApp, data_manager=self.db, app_settings=self.settings)
-
-    def launch_character_manager(self):
-        """
-        Gathers necessary data and launches the unified Character Manager.
-        """
-        world_id = self.settings.get("active_world_id")
-        campaign_id = self.settings.get("active_campaign_id")
-        lang = self.settings.get("active_language")
-
-        if not world_id or not campaign_id:
-            logging.warning("Character Manager launch attempted without active world/campaign.")
-            return
-
-        world_data = self.db.get_world_translation(world_id, lang)
-        all_campaigns = self.db.get_campaigns_for_world(world_id)
-        campaign_data = next((c for c in all_campaigns if c['campaign_id'] == campaign_id), None)
-
-        if not world_data or not campaign_data:
-            logging.error("Could not retrieve active world/campaign data for Character Manager.")
-            return
-
-        self.open_toplevel(CharacterManagerApp,
-                           data_manager=self.db,
-                           api_service=self.ai,
-                           world_data=world_data,
-                           campaign_data=campaign_data)
+    def launch_character_manager(self, e):
+        if self.page:
+            self.page.snack_bar = ft.SnackBar(ft.Text("Character Manager not yet implemented in Flet."))
+            self.page.snack_bar.open = True
+            self.page.update()
