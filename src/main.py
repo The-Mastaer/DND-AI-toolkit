@@ -1,126 +1,109 @@
-# src/main.py
-
 import flet as ft
-import os
-from dotenv import load_dotenv
+import asyncio
 
-# --- Aria's Note: New, structured imports ---
-from state import AppState
-from services.supabase_service import SupabaseService
-from services.gemini_service import GeminiService
-from app_settings import AppSettings
-from views.home_view import create_main_menu_view
-from views.world_manager_view import create_world_manager_view
-from views.campaign_manager_view import create_campaign_manager_view
-from views.settings_view import create_settings_view
+# --- Project Imports ---
+from src import config
+from src.state import AppState
+from src.app_settings import AppSettings
+from src.services.supabase_service import SupabaseService
+from src.services.gemini_service import GeminiService
+from src.components.app_bar import AppAppBar
+
+# --- View Imports ---
+from src.views.main_menu_view import MainMenuView
+from src.views.worlds_view import WorldsView
+from src.views.settings_view import SettingsView
 
 
 async def main(page: ft.Page):
     """
-    Initializes and runs the D&D Toolkit Flet application.
-    This is the main entry point and router, refactored for the Phoenix Protocol.
+    The main entry point for the Flet application.
+    This function initializes the application, sets up services, configures the UI,
+    and defines the routing logic.
     """
-    # --- Configuration and Service Initialization ---
-    # Load environment variables from .env file
-    load_dotenv()
+    # --- 1. Application Setup ---
+    page.title = "D&D AI Toolkit"
+    page.vertical_alignment = ft.MainAxisAlignment.START
+    page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    page.theme_mode = ft.ThemeMode.LIGHT
 
-    # Initialize settings and services
-    app_settings = AppSettings()
-    supabase_service = SupabaseService(
-        url=os.environ.get("SUPABASE_URL"),
-        key=os.environ.get("SUPABASE_KEY")
+    if not config.validate_keys():
+        page.add(ft.Text("Fatal Error: Missing API keys. Check console and .env file.", color=ft.Colors.ERROR))
+        return
+
+    # --- 2. Load Settings and Initialize Services ---
+    print("Main: Loading application settings...")
+    # Run the synchronous, blocking call in an executor via the page's event loop
+    settings_json = await page.loop.run_in_executor(
+        None, page.client_storage.get, "app_settings"
     )
-    gemini_service = GeminiService(
-        api_key=os.environ.get("GEMINI_API_KEY"),
-        app_settings=app_settings,
-        db_service=supabase_service  # Pass the Supabase service to Gemini
-    )
+    app_settings = AppSettings.from_json(settings_json)
 
-    # --- Flet App Configuration ---
-    page.title = "DM's AI Toolkit"
-    page.window_min_width = 1100
-    page.window_min_height = 750
-    page.theme_mode = ft.ThemeMode(app_settings.get("theme", "DARK").upper())
-    page.theme = ft.Theme(color_scheme_seed="orange")
-    page.fonts = {
-        "Cinzel": "https://github.com/google/fonts/raw/main/ofl/cinzel/Cinzel-Regular.ttf",
-        "Roboto": "https://github.com/google/fonts/raw/main/apache/roboto/Roboto-Regular.ttf"
-    }
+    print("Main: Initializing services...")
+    supabase_service = SupabaseService(url=config.SUPABASE_URL, key=config.SUPABASE_ANON_KEY)
+    await supabase_service.initialize_client()
 
-    # --- Aria's Note: Centralized Application State ---
-    # A single AppState instance holds all our services and runtime state.
-    # This instance is passed to all views, ensuring consistent access.
+    gemini_service = GeminiService(api_key=config.GEMINI_API_KEY)
+
     app_state = AppState(
         supabase_service=supabase_service,
         gemini_service=gemini_service,
-        app_settings=app_settings
+        settings=app_settings,
     )
+    print("Main: Services and state initialized.")
 
-    # --- UI Layout Controls ---
-    main_content_area = ft.Column(expand=True, animate_opacity=300)
+    # --- 3. Routing Logic ---
+    async def route_change(route_event: ft.RouteChangeEvent):
+        """Handles navigation, building the appropriate view based on the route."""
+        print(f"Main: Route changed to: {route_event.route}")
+        page.views.clear()
 
-    # --- Routing and View Handling ---
-    async def route_change(route):
-        """
-        This function is called every time the page's route changes.
-        It swaps the content in the main_content_area based on the route.
-        """
-        main_content_area.opacity = 0
-        await page.update_async()
+        view_map = {
+            "/": MainMenuView,
+            "/worlds": WorldsView,
+            "/settings": SettingsView,
+        }
 
-        main_content_area.controls.clear()
+        # Instantiate the view from the map or a 404 view
+        view_class = view_map.get(route_event.route)
+        if view_class:
+            view = view_class(page, app_state)
+        else:
+            view = ft.View(
+                route="/404",
+                controls=[ft.Text("404: Page not found", size=32)],
+                vertical_alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            )
 
-        # Aria's Note: Views are now imported from their own modules
-        if page.route == "/worlds":
-            main_content_area.controls.append(await create_world_manager_view(page, app_state))
-        elif page.route == "/campaigns":
-            main_content_area.controls.append(await create_campaign_manager_view(page, app_state))
-        elif page.route == "/settings":
-            main_content_area.controls.append(await create_settings_view(page, app_state))
-        else:  # Default to main menu (home)
-            main_content_area.controls.append(await create_main_menu_view(page, app_state))
+        view.appbar = AppAppBar(page)
+        # Add FAB to worlds view
+        if isinstance(view, WorldsView):
+            page.floating_action_button = view.fab
+        else:
+            page.floating_action_button = None
 
-        main_content_area.opacity = 1
-        await page.update_async()
+        page.views.append(view)
 
+        if hasattr(view, 'on_view_load') and callable(view.on_view_load):
+            await view.on_view_load()
+
+        page.update()
+
+    def view_pop(view_event: ft.ViewPopEvent):
+        """Handles the user clicking the 'back' button in the AppBar."""
+        page.views.pop()
+        top_view = page.views[-1]
+        page.go(top_view.route)
+
+    # --- 4. Page Event Handlers ---
     page.on_route_change = route_change
+    page.on_view_pop = view_pop
 
-    # --- Main App Layout ---
-    await page.add_async(
-        ft.Row(
-            [
-                ft.NavigationRail(
-                    selected_index=0,
-                    label_type=ft.NavigationRailLabelType.ALL,
-                    min_width=100,
-                    min_extended_width=400,
-                    group_alignment=-0.9,
-                    destinations=[
-                        ft.NavigationRailDestination(
-                            icon=ft.icons.HOME_OUTLINED, selected_icon=ft.icons.HOME, label="Home"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.icons.PUBLIC_OUTLINED, selected_icon=ft.icons.PUBLIC, label="Worlds"
-                        ),
-                        ft.NavigationRailDestination(
-                            icon=ft.icons.SETTINGS_OUTLINED,
-                            selected_icon=ft.icons.SETTINGS,
-                            label="Settings",
-                        ),
-                    ],
-                    on_change=lambda e: page.go(["/", "/worlds", "/settings"][e.control.selected_index]),
-                ),
-                ft.VerticalDivider(),
-                main_content_area,
-            ],
-            expand=True,
-        )
-    )
-
-    # Initial load to the current route
-    await page.go_async(page.route)
+    # --- 5. Initial Page Load ---
+    print("Main: Performing initial route...")
+    page.go("/")
 
 
-# --- Application Entry Point ---
 if __name__ == "__main__":
     ft.app(target=main)
