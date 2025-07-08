@@ -8,10 +8,10 @@ SUPABASE_CREDS_FILE = "supabase_creds.json"  # New file for credentials
 DB_FILE = "dnd_toolkit.db"  # This will no longer be used by DataManager, but we'll keep it for now
 
 # --- Default AI Model Configuration ---
-DEFAULT_TEXT_MODEL = 'gemini-1.5-flash'
-DEFAULT_IMAGE_MODEL = 'imagen-3'
-AVAILABLE_TEXT_MODELS = ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.0-pro']
-AVAILABLE_IMAGE_MODELS = ['imagen-3', 'imagen-2']
+DEFAULT_TEXT_MODEL = 'gemini-2.5-flash'
+DEFAULT_IMAGE_MODEL = 'imagen-3.0-generate-002'
+AVAILABLE_TEXT_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-pro']
+AVAILABLE_IMAGE_MODELS = ['imagen-3.0-generate-002', 'imagen-4.0-generate-preview-06-06']
 
 
 # --- Language Configuration ---
@@ -170,16 +170,6 @@ USER'S QUESTION:
 Your Answer:
 """
 
-DEFAULT_NPC_PORTRAIT_PROMPT = """
-Create a high-quality, vibrant, and detailed fantasy character portrait based on the following description.
-The style should be painterly and realistic, suitable for a Dungeons & Dragons character.
-Focus on the face, expression, and key features mentioned. The character should be the central focus.
-
---- CHARACTER APPEARANCE ---
-{appearance_prompt}
---- END OF DESCRIPTION ---
-"""
-
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -200,7 +190,6 @@ def load_supabase_credentials():
     """Loads Supabase URL and Key from a JSON file."""
     if not os.path.exists(SUPABASE_CREDS_FILE):
         logging.warning(f"'{SUPABASE_CREDS_FILE}' not found. Please create it with your Supabase credentials.")
-        # Create a template file for the user
         template = {"supabase_url": "INSERT_YOUR_SUPABASE_URL", "supabase_key": "INSERT_YOUR_SUPABASE_KEY"}
         with open(SUPABASE_CREDS_FILE, 'w') as f:
             json.dump(template, f, indent=4)

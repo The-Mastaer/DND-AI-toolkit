@@ -72,6 +72,9 @@ class WorldManagerApp(ft.AlertDialog):
             self.world_list_view.controls.append(world_button)
 
         await self._clear_main_panel()
+        # Ensure the page updates after loading everything.
+        await self.page.update()
+
 
     async def select_world(self, world_data):
         self.selected_world_data = world_data
@@ -87,7 +90,7 @@ class WorldManagerApp(ft.AlertDialog):
         self.actions[2].disabled = False
 
         await self.highlight_selected_world()
-        await self.update_async()
+        await self.page.update()
 
     async def highlight_selected_world(self):
         if not self.selected_world_data: return
@@ -110,7 +113,7 @@ class WorldManagerApp(ft.AlertDialog):
 
         for button in self.world_list_view.controls:
             button.style.bgcolor = "transparent"
-        await self.update_async()
+        await self.page.update()
 
     async def _clear_main_panel(self):
         self.selected_world_data = None
@@ -125,7 +128,7 @@ class WorldManagerApp(ft.AlertDialog):
         self.actions[2].disabled = True
         for button in self.world_list_view.controls:
             button.style.bgcolor = "transparent"
-        await self.update_async()
+        # No page update here, it will be called by the parent function
 
     async def save_world(self, e):
         name = self.world_name_entry.value.strip()
@@ -133,17 +136,20 @@ class WorldManagerApp(ft.AlertDialog):
         lang = self.language_dropdown.value
         if not name:
             self.status_label.value = "Error: World Name cannot be empty."
-            await self.update_async()
+            await self.page.update()
             return
         try:
             if self.selected_world_data:
                 world_id = self.selected_world_data['world_id']
                 await self.page.run_in_executor(None, self.db.update_world_translation, world_id, lang, name, lore)
             else:
-                world_id = await self.page.run_in_executor(None, self.db.create_world, name, lang, lore)
+                # We need to get the new world_id back to select it
+                new_world_data = await self.page.run_in_executor(None, self.db.create_world, name, lang, lore)
+                world_id = new_world_data['world_id']
 
             await self.load_and_display_worlds()
 
+            # After reloading, find the newly saved world in the list and select it
             newly_selected = next((w for w in self.worlds_in_current_lang if w['world_id'] == world_id), None)
             if newly_selected:
                 await self.select_world(newly_selected)
@@ -152,7 +158,7 @@ class WorldManagerApp(ft.AlertDialog):
         except Exception as ex:
             logging.error(f"Error saving world: {ex}")
             self.status_label.value = "Error: Could not save world."
-        await self.update_async()
+        await self.page.update()
 
     async def delete_selected_world(self, e):
         if not self.selected_world_data: return
@@ -167,11 +173,11 @@ class WorldManagerApp(ft.AlertDialog):
                 self.status_label.value = "Error: Could not delete world."
 
             confirm_dialog.open = False
-            await self.page.update_async()
+            await self.page.update()
 
         async def cancel_delete(e):
             confirm_dialog.open = False
-            await self.page.update_async()
+            await self.page.update()
 
         confirm_dialog = ft.AlertDialog(
             modal=True,
@@ -186,22 +192,26 @@ class WorldManagerApp(ft.AlertDialog):
         )
         self.page.dialog = confirm_dialog
         confirm_dialog.open = True
-        await self.page.update_async()
+        await self.page.update()
 
     async def on_language_change(self, e):
         await self.load_and_display_worlds()
 
     async def close_dialog(self, e):
+        """
+        Closes the dialog and refreshes the main view.
+        The call to refresh_display is now synchronous, as it should be.
+        """
         self.open = False
-        self.main_view.refresh_display()
-        await self.page.update_async()
+        self.main_view.refresh_display() # This is a synchronous call
+        await self.page.update()
 
     async def open_campaign_manager(self, e):
         self.page.snack_bar = ft.SnackBar(ft.Text("Campaign Manager not yet implemented in Flet."))
         self.page.snack_bar.open = True
-        await self.page.update_async()
+        await self.page.update()
 
     async def open_translate_dialog(self, e):
         self.page.snack_bar = ft.SnackBar(ft.Text("Translate dialog not yet implemented in Flet."))
         self.page.snack_bar.open = True
-        await self.page.update_async()
+        await self.page.update()

@@ -1,6 +1,9 @@
 # API Keys
 api_key.json
 
+# supabase
+supabase_creds.json
+
 # Database file
 *.db
 

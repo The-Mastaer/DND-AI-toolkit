@@ -1,8 +1,9 @@
 import logging
-from google import genai
+import google.genai as genai
 import json
 from supabase import create_client, Client
 import io
+from config import SUPPORTED_LANGUAGES
 
 
 class DataManager:
@@ -212,7 +213,6 @@ class GeminiService:
         self.db = data_manager
         self.client = None
         self.chat_sessions = {}
-        self.srd_pdf_cache = None
         self._configure_api()
 
     def _configure_api(self):
@@ -232,10 +232,7 @@ class GeminiService:
         if persona not in self.chat_sessions:
             if not self.client: return None
             text_model_name = self.settings.get("text_model")
-            # With the new SDK, the model is part of the generate_content call,
-            # but we can pre-start a chat session for context management.
-            model = self.client.generative_model(text_model_name)
-            self.chat_sessions[persona] = model.start_chat()
+            self.chat_sessions[persona] = self.client.chats.create(model=f'models/{text_model_name}')
             logging.info(f"New chat session started for '{persona}' with model '{text_model_name}'.")
         return self.chat_sessions[persona]
 
@@ -252,7 +249,7 @@ class GeminiService:
         if not chat_session: raise ConnectionError("Chat session not initialized.")
 
         full_prompt = self._build_prompt_with_context(user_prompt, persona)
-        response = chat_session.send_message(full_prompt)
+        response = chat_session.send_message(message=full_prompt)
         return response.text
 
     def _build_prompt_with_context(self, user_prompt, persona):
@@ -275,23 +272,42 @@ class GeminiService:
                                           user_question=user_prompt)
         return user_prompt
 
+    def translate_text(self, text_to_translate, target_language_code):
+        if not self.client: raise ConnectionError("Gemini Client not initialized.")
+
+        text_model_name = self.settings.get("text_model")
+        prompt_template = self.settings.get("prompts", {}).get("translation")
+        target_language_name = SUPPORTED_LANGUAGES.get(target_language_code, target_language_code)
+
+        prompt = prompt_template.format(
+            target_language_name=target_language_name,
+            target_language_code=target_language_code,
+            text_to_translate=text_to_translate
+        )
+
+        response = self.client.models.generate_content(model=f'models/{text_model_name}', contents=prompt)
+        return response.text
+
     def generate_npc(self, params, campaign_data=None, include_party=True, include_session=True):
         if not self.client: raise ValueError("API Client not configured.")
-        campaign_data = campaign_data or {}
         text_model_name = self.settings.get("text_model")
 
         npc_generation_prompt_template = self.settings.get("prompts", {}).get("npc_generation")
+
         world_lore = ""
         if campaign_data and campaign_data.get('world_id'):
             world_trans = self.db.get_world_translation(campaign_data['world_id'], campaign_data['language'])
             if world_trans: world_lore = world_trans.get('world_lore', '')
+
         party_context = campaign_data.get('party_info', '') if include_party else ""
         session_context = campaign_data.get('session_history', '') if include_session else ""
         custom_prompt_text = params.get('custom_prompt', '')
+
         campaign_context_section = f"\n**Campaign Lore (Follow this lore closely):**\n{world_lore}\n" if world_lore else ""
         party_context_section = f"\n**Player Party Information (Consider their impact):**\n{party_context}\n" if party_context else ""
         session_context_section = f"\n**Recent Session History (The NPC may be aware of these events):**\n{session_context}\n" if session_context else ""
         custom_prompt_section = f"\n**Additional Custom Prompt:**\n- {custom_prompt_text}\n" if custom_prompt_text else ""
+
         prompt = npc_generation_prompt_template.format(
             gender=params['gender'], attitude=params['attitude'], rarity=params['rarity'],
             environment=params['environment'], race=params['race'], character_class=params['character_class'],
@@ -301,12 +317,13 @@ class GeminiService:
             session_context=session_context_section,
             custom_prompt_section=custom_prompt_section
         )
+
         logging.info(f"Sending generation request to model '{text_model_name}'.")
 
-        response = self.client.generate_content(
-            model=f"models/{text_model_name}",
+        response = self.client.models.generate_content(
+            model=f'models/{text_model_name}',
             contents=prompt,
-            generation_config=genai.types.GenerationConfig(response_mime_type="application/json")
+            config=genai.types.GenerateConfig(response_mime_type="application/json")
         )
         raw_text = response.text
         try:

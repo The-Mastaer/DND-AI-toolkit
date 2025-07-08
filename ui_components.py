@@ -1,6 +1,5 @@
 import flet as ft
 
-
 class ChatBubble(ft.Row):
     """
     A custom chat bubble widget, rebuilt for Flet 1.0+.
@@ -15,14 +14,17 @@ class ChatBubble(ft.Row):
         self.text_control = ft.Text(
             value=self.message,
             selectable=True,
-            width=600
+            width=600,
+            font_family="Roboto" # Ensure consistent font
         )
 
         if self.role == "user":
-            bubble_color = ft.colors.PRIMARY_CONTAINER
+            # Use string-based theme colors
+            bubble_color = "primary_container"
             self.alignment = ft.MainAxisAlignment.END
         else:
-            bubble_color = ft.colors.SECONDARY_CONTAINER
+            # Use string-based theme colors
+            bubble_color = "secondary_container"
             self.alignment = ft.MainAxisAlignment.START
 
         self.bubble_card = ft.Card(

@@ -91,13 +91,18 @@ class MainMenuApp(ft.Row):
         if self.page: self.update()
 
     async def launch_world_manager(self, e):
-        """Creates and displays the World Manager dialog using a robust async lifecycle."""
+        """
+        Creates and displays the World Manager dialog.
+        This version streamlines the async calls for better stability.
+        """
         if self.page:
             world_manager_dialog = WorldManagerApp(self, self.db, self.ai)
             self.page.dialog = world_manager_dialog
             world_manager_dialog.open = True
-            await self.page.update_async() # Draw the empty dialog
-            await world_manager_dialog.load_and_display_worlds() # THEN populate it
+            # The page will be updated by the load_and_display_worlds method,
+            # which is called immediately after and contains its own page.update() call.
+            # This avoids a potential race condition or redundant update call.
+            await world_manager_dialog.load_and_display_worlds()
 
     def launch_settings(self, e):
         if self.page:
