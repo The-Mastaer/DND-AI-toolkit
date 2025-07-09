@@ -23,10 +23,10 @@ Solution: The .env file was moved to the project's root directory (DND-AI-toolki
 2. Flet Framework Syntax Errors
 A series of AttributeError exceptions were encountered due to subtle inconsistencies in Flet's syntax.
 
-2.1. Incorrect ft.icons and ft.colors Usage
+2.1. Incorrect ft.Icons and ft.Colors Usage
 Error: AttributeError: module 'flet' has no attribute 'icons' and AttributeError: module 'flet' has no attribute 'colors'.
 
-Cause: The initial code used lowercase ft.icons and ft.colors. The Flet library requires PascalCase for these modules.
+Cause: The initial code used lowercase ft.Icons and ft.Colors. The Flet library requires PascalCase for these modules.
 
 Solution: All references were updated to use the correct, case-sensitive syntax: ft.Icons and ft.Colors.
 

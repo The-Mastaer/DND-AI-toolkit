@@ -1,94 +1,62 @@
-# src/components/new_world_dialog.py
-
 import flet as ft
-from ..services.supabase_service import SupabaseService
-
+# --- Use relative imports to go up to 'src' and then down ---
+from ..services.supabase_service import supabase
 
 class NewWorldDialog(ft.AlertDialog):
     """
-    A dialog component for creating a new world.
-    It signals its result using the 'data' attribute upon closing.
+    A dialog window for creating a new world.
+    It includes fields for the world's name and description
+    and handles the database insertion.
     """
-
-    def __init__(self, supabase_service: SupabaseService, user_id: str):
+    def __init__(self, on_create_callback):
         super().__init__()
-        self.supabase_service = supabase_service
-        self.user_id = user_id
-
-        # This attribute will be checked by the on_dismiss handler in the parent view.
-        self.data = "cancelled"
-
+        self.on_create_callback = on_create_callback
         self.modal = True
-        self.title = ft.Text("Create New World")
-
+        self.title = ft.Text("Create a New World")
         self.name_field = ft.TextField(label="World Name", autofocus=True)
-        self.lore_field = ft.TextField(label="World Lore", multiline=True, min_lines=3)
-
-        self.content = ft.Column(
-            controls=[
-                self.name_field,
-                self.lore_field,
-            ],
-            spacing=10,
-            tight=True,
-        )
-
+        self.description_field = ft.TextField(label="Description", multiline=True, min_lines=3)
+        self.content = ft.Column([self.name_field, self.description_field], tight=True)
         self.actions = [
             ft.TextButton("Cancel", on_click=self.close_dialog),
             ft.FilledButton("Create", on_click=self.create_world),
         ]
         self.actions_alignment = ft.MainAxisAlignment.END
 
-    def create_world(self, e: ft.ControlEvent):
+    def create_world(self, e):
         """
-        Handles the 'Create' button click. On success, it sets a data flag
-        and then closes itself, triggering the on_dismiss event in the parent.
+        Validates input and inserts a new world record into the database.
         """
-        print("NewWorldDialog: 'Create' button clicked.")
-        name = self.name_field.value
-        lore = self.lore_field.value
-
-        if not name:
-            self.name_field.error_text = "World name cannot be empty"
-            self.page.update()
+        if not self.name_field.value:
+            self.name_field.error_text = "World name cannot be empty."
+            self.name_field.update()
             return
 
-        create_button = e.control
-        create_button.disabled = True
-        create_button.text = "Creating..."
-        self.page.update()
-        print("NewWorldDialog: UI locked for creation.")
-
         try:
-            print("NewWorldDialog: Calling Supabase to create world...")
-            self.supabase_service.create_world(self.user_id, name, lore)
-            print("NewWorldDialog: Supabase call successful.")
+            response = supabase.table('worlds').insert({
+                'name': self.name_field.value,
+                'description': self.description_field.value
+            }).execute()
+            print("World creation response:", response)
 
-            self.page.snack_bar = ft.SnackBar(ft.Text(f"World '{name}' created successfully!"))
-            self.page.snack_bar.open = True
+            if self.on_create_callback:
+                self.on_create_callback()
 
-            # Set the data attribute to signal success to the on_dismiss handler
-            self.data = "created"
-
-            # Now, close the dialog. This will trigger on_dismiss in WorldsView.
-            self.open = False
-            self.page.update()
-            print("NewWorldDialog: Dialog closed, signaling 'created'.")
+            self.close_dialog(e)
 
         except Exception as ex:
-            print(f"NewWorldDialog: Error creating world - {ex}")
-            self.page.snack_bar = ft.SnackBar(
-                content=ft.Text(f"Error creating world: {ex}"),
-                bgcolor=ft.Colors.RED_700
-            )
-            self.page.snack_bar.open = True
-            create_button.disabled = False
-            create_button.text = "Create"
-            self.page.update()
+            print(f"Error creating world: {ex}")
+            self.title = ft.Text("Error")
+            self.content = ft.Text(f"An error occurred: {ex}")
+            self.actions = [ft.TextButton("Close", on_click=self.close_dialog)]
+            self.update()
 
-    def close_dialog(self, _: ft.ControlEvent):
-        """Closes the dialog without signaling success."""
-        print("NewWorldDialog: 'Cancel' or close action triggered.")
-        self.data = "cancelled"
+
+    def close_dialog(self, e):
+        """
+        Closes the dialog and clears the input fields.
+        """
         self.open = False
+        self.name_field.value = ""
+        self.name_field.error_text = ""
+        self.description_field.value = ""
         self.page.update()
