@@ -1,74 +1,68 @@
-import asyncio
-from supabase import acreate_client, AsyncClient
-from typing import Optional, Dict, Any, List
+# src/services/supabase_service.py
+
+from supabase import create_client, Client
+from ..config import SUPABASE_URL, SUPABASE_KEY
+
 
 class SupabaseService:
     """
-    A service class to manage interactions with the Supabase backend.
-    This class now correctly handles the 'lore' column as a JSONB type for
-    multi-language support.
+    A service class to interact with the Supabase backend.
+    Handles all database operations for the application.
     """
-    def __init__(self, url: str, key: str):
-        self.url = url
-        self.key = key
-        self.client: Optional[AsyncClient] = None
-        print("SupabaseService: Initialized.")
 
-    async def initialize_client(self):
-        """Asynchronously creates and initializes the Supabase client."""
-        if not self.client:
-            try:
-                self.client: AsyncClient = await acreate_client(self.url, self.key)
-                print("SupabaseService: Client created successfully.")
-            except Exception as e:
-                print(f"SupabaseService: Error creating client - {e}")
-                self.client = None
-
-    async def get_worlds(self) -> List[Dict[str, Any]]:
-        """Asynchronously fetches all worlds from the database."""
-        if not self.client: return []
-        try:
-            response = await self.client.from_("worlds").select("*").order("created_at", desc=True).execute()
-            return response.data if response.data else []
-        except Exception as e:
-            print(f"SupabaseService: Error fetching worlds - {e}")
-            return []
-
-    async def add_world(self, name: str, lore: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    def __init__(self):
         """
-        Adds a new world with its initial lore content.
-        The 'lore' column is expected to be JSONB.
+        Initializes the Supabase client.
         """
-        if not self.client: return None
         try:
-            # Correctly passing 'lore' as a dictionary for the JSONB column
-            world_data = {"name": name, "lore": lore}
-            response = await self.client.from_("worlds").insert(world_data).execute()
-            return response.data[0] if response.data else None
+            self.client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+            print("Supabase Service initialized successfully.")
         except Exception as e:
-            print(f"SupabaseService: Error adding world - {e}")
-            return None
+            print(f"CRITICAL: Failed to initialize Supabase client: {e}")
+            raise
 
-    async def update_world(self, world_id: int, name: str, lore: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    def get_worlds(self, user_id: str):
         """
-        Updates an existing world's name and its JSONB lore data.
-        """
-        if not self.client: return None
-        try:
-            # Correctly passing 'lore' as a dictionary for the JSONB column
-            update_data = {"name": name, "lore": lore}
-            response = await self.client.from_("worlds").update(update_data).eq("id", world_id).execute()
-            return response.data[0] if response.data else None
-        except Exception as e:
-            print(f"SupabaseService: Error updating world - {e}")
-            return None
+        Fetches all worlds associated with a user_id.
 
-    async def delete_world(self, world_id: int) -> bool:
-        """Deletes a world from the database."""
-        if not self.client: return False
+        Raises:
+            Exception: Propagates API errors to the caller.
+        """
         try:
-            await self.client.from_("worlds").delete().eq("id", world_id).execute()
-            return True
+            response = self.client.table('worlds').select('*').eq('user_id', user_id).execute()
+            return response.data
         except Exception as e:
-            print(f"SupabaseService: Error deleting world - {e}")
-            return False
+            print(f"Error fetching worlds from Supabase: {e}")
+            raise e
+
+    def create_world(self, user_id: str, name: str, lore: str):
+        """
+        Creates a new world in the database.
+
+        Raises:
+            Exception: Propagates API errors to the caller.
+        """
+        try:
+            response = self.client.table('worlds').insert({
+                'user_id': user_id,
+                'name': name,
+                'lore': lore
+            }).execute()
+            return response.data
+        except Exception as e:
+            print(f"Error creating world in Supabase: {e}")
+            raise e
+
+    def delete_world(self, world_id: int):
+        """
+        Deletes a world by its ID.
+
+        Raises:
+            Exception: Propagates API errors to the caller.
+        """
+        try:
+            response = self.client.table('worlds').delete().eq('id', world_id).execute()
+            return response.data
+        except Exception as e:
+            print(f"Error deleting world from Supabase: {e}")
+            raise e

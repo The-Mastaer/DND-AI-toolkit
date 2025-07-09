@@ -1,48 +1,42 @@
+# src/config.py
+
 import os
 from dotenv import load_dotenv
 
-def load_env():
-    """
-    Loads environment variables from a .env file located in the project root.
+# --- Environment Variable Loading ---
+# This function call looks for a file named .env in the project's root directory
+# and loads all the key-value pairs defined in it as environment variables.
+# This is the standard and secure way to handle secrets in a Python application.
+load_dotenv()
 
-    This function traverses up the directory tree from the current file's location
-    to find the project root (identified by the presence of a .git directory or
-    the .env file itself) and then loads the .env file.
-    """
-    # Start from the directory of the current script
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = current_dir
+# --- API Key and URL Retrieval ---
+# We use os.getenv() to retrieve the loaded environment variables.
+# If a variable is not found, os.getenv() will return None. This prevents the
+# app from crashing but will likely cause errors in the services that depend on these keys.
 
-    # Traverse up to find the project root (e.g., where .git or .env is)
-    while not os.path.exists(os.path.join(project_root, '.env')) and \
-          not os.path.exists(os.path.join(project_root, '.git')) and \
-          os.path.dirname(project_root) != project_root:
-        project_root = os.path.dirname(project_root)
-
-    # Construct the path to the .env file
-    dotenv_path = os.path.join(project_root, '.env')
-
-    # Load the .env file if it exists
-    if os.path.exists(dotenv_path):
-        load_dotenv(dotenv_path=dotenv_path)
-    else:
-        print("Warning: .env file not found. Please create one in the project root.")
-
-# Load environment variables at module import time
-load_env()
-
-# --- Retrieve credentials from environment variables ---
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+# Your secret key for the Google Gemini API.
+# Found in your Google AI Studio dashboard.
+# Example in .env file: GEMINI_API_KEY="AIzaSy...your...key..."
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-def validate_keys():
-    """
-    Validates that all necessary API keys and URLs are present.
-    Returns True if all keys are present, False otherwise.
-    """
-    if not all([SUPABASE_URL, SUPABASE_ANON_KEY, GEMINI_API_KEY]):
-        print("CRITICAL ERROR: One or more environment variables are missing.")
-        print("Please check your .env file in the project root.")
-        return False
-    return True
+# The unique URL for your Supabase project.
+# Found in your Supabase project settings under 'API'.
+# Example in .env file: SUPABASE_URL="https://your-project-ref.supabase.co"
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+
+# The 'anon' key for your Supabase project. This key is safe to use in a client-side
+# application like this one, as long as you have Row Level Security (RLS) enabled.
+# Found in your Supabase project settings under 'API'.
+# Example in .env file: SUPABASE_KEY="ey...your...anon...key..."
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+
+# --- Validation (Optional but Recommended) ---
+# It's good practice to check if the essential keys were loaded correctly at startup.
+# This provides a clear error message if the .env file is missing or misconfigured.
+if not GEMINI_API_KEY:
+    print("WARNING: GEMINI_API_KEY not found in .env file.")
+if not SUPABASE_URL:
+    print("WARNING: SUPABASE_URL not found in .env file.")
+if not SUPABASE_KEY:
+    print("WARNING: SUPABASE_KEY not found in .env file.")

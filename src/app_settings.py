@@ -1,49 +1,64 @@
-from dataclasses import dataclass, asdict
+# src/app_settings.py
+
 import json
-import flet as ft
+import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .state import AppState
 
 
-@dataclass
 class AppSettings:
     """
-    A data class to hold user-configurable application settings.
-
-    This provides a structured way to manage settings like AI model parameters
-    and theme choices. It includes methods for serialization to and from JSON,
-    which is necessary for storing the object in Flet's client storage.
+    Handles loading and saving application settings to a JSON file.
     """
-    # Appearance
-    theme_mode: str = "light"  # "light" or "dark"
 
-    # Text Generation Models
-    text_model: str = "gemini-2.5-flash"
-    temperature: float = 0.7
-    top_p: float = 1.0
+    def __init__(self, settings_file: str = "settings.json"):
+        self.settings_file = settings_file
 
-    # Image Generation Models
-    image_model: str = "gemini-2.0-flash-preview-image-generation"
-
-    def to_json(self) -> str:
-        """Serializes the dataclass instance to a JSON string."""
-        return json.dumps(asdict(self))
-
-    @classmethod
-    def from_json(cls, json_str: str) -> 'AppSettings':
-        """
-        Creates a dataclass instance from a JSON string.
-
-        Args:
-            json_str: The JSON string representing the settings.
-
-        Returns:
-            An instance of AppSettings. Returns default settings if JSON is
-            invalid or empty.
-        """
-        if not json_str:
-            return cls()
+    def save_settings(self, state: 'AppState'):
+        """Saves relevant parts of the application state to the settings file."""
+        settings_data = {
+            "selected_world_id": state.selected_world_id,
+            "selected_campaign_id": state.selected_campaign_id,
+            "selected_text_model": state.selected_text_model,
+            "selected_image_model": state.selected_image_model,
+            "theme_mode": state.theme_mode,
+        }
         try:
-            data = json.loads(json_str)
-            return cls(**data)
-        except (json.JSONDecodeError, TypeError):
-            # Return default settings if there's an error
-            return cls()
+            with open(self.settings_file, 'w') as f:
+                json.dump(settings_data, f, indent=4)
+            print(f"Settings saved to {self.settings_file}")
+        except IOError as e:
+            print(f"Error saving settings: {e}")
+
+    def load_settings(self, state: 'AppState'):
+        """Loads settings from the settings file and applies them to the state."""
+        if not os.path.exists(self.settings_file):
+            print("Settings file not found. Using default state.")
+            return
+
+        try:
+            with open(self.settings_file, 'r') as f:
+                settings_data = json.load(f)
+
+            # Load selections
+            state.selected_world_id = settings_data.get("selected_world_id")
+            state.selected_campaign_id = settings_data.get("selected_campaign_id")
+
+            # Load theme
+            state.theme_mode = settings_data.get("theme_mode", "dark")
+
+            # Load models, falling back to default if saved model is no longer valid
+            loaded_text_model = settings_data.get("selected_text_model")
+            if loaded_text_model and loaded_text_model in state.available_text_models:
+                state.selected_text_model = loaded_text_model
+
+            loaded_image_model = settings_data.get("selected_image_model")
+            if loaded_image_model and loaded_image_model in state.available_image_models:
+                state.selected_image_model = loaded_image_model
+
+            print(f"Settings loaded from {self.settings_file}")
+
+        except (IOError, json.JSONDecodeError) as e:
+            print(f"Error loading settings: {e}. Using default state.")

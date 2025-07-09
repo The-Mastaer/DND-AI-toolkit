@@ -1,78 +1,94 @@
+# src/components/new_world_dialog.py
+
 import flet as ft
-from src.services.gemini_service import GeminiService
+from ..services.supabase_service import SupabaseService
 
 
 class NewWorldDialog(ft.AlertDialog):
     """
     A dialog component for creating a new world.
-    This now calls the dedicated lore generation method in the Gemini service.
+    It signals its result using the 'data' attribute upon closing.
     """
 
-    def __init__(self, gemini_service: GeminiService, on_create):
+    def __init__(self, supabase_service: SupabaseService, user_id: str):
         super().__init__()
-        self.gemini_service = gemini_service
-        self.on_create = on_create
+        self.supabase_service = supabase_service
+        self.user_id = user_id
+
+        # This attribute will be checked by the on_dismiss handler in the parent view.
+        self.data = "cancelled"
+
         self.modal = True
-        self.title = ft.Text("Create a New World")
+        self.title = ft.Text("Create New World")
 
-        self.world_name = ft.TextField(label="World Name", autofocus=True)
-        self.world_lore = ft.TextField(
-            label="Initial Lore (English)",
-            multiline=True,
-            min_lines=3,
-            max_lines=5,
-        )
-        self.generate_button = ft.ElevatedButton(
-            "Generate Lore",
-            icon=ft.Icons.AUTO_AWESOME,
-            on_click=self.generate_lore
-        )
-        self.progress_ring = ft.ProgressRing(visible=False)
+        self.name_field = ft.TextField(label="World Name", autofocus=True)
+        self.lore_field = ft.TextField(label="World Lore", multiline=True, min_lines=3)
 
-        self.content = ft.Column([
-            self.world_name,
-            self.world_lore,
-            ft.Row([self.generate_button, self.progress_ring], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
-        ])
+        self.content = ft.Column(
+            controls=[
+                self.name_field,
+                self.lore_field,
+            ],
+            spacing=10,
+            tight=True,
+        )
 
         self.actions = [
             ft.TextButton("Cancel", on_click=self.close_dialog),
-            ft.FilledButton("Create", on_click=self.create_clicked),
+            ft.FilledButton("Create", on_click=self.create_world),
         ]
         self.actions_alignment = ft.MainAxisAlignment.END
 
-    def close_dialog(self, e):
-        self.open = False
-        self.page.update()
+    def create_world(self, e: ft.ControlEvent):
+        """
+        Handles the 'Create' button click. On success, it sets a data flag
+        and then closes itself, triggering the on_dismiss event in the parent.
+        """
+        print("NewWorldDialog: 'Create' button clicked.")
+        name = self.name_field.value
+        lore = self.lore_field.value
 
-    def create_clicked(self, e):
-        """Handles the create button click event."""
-        if self.world_name.value:
-            initial_lore = {"en": self.world_lore.value}
-            self.page.run_task(self.on_create, self.world_name.value, initial_lore)
-            self.close_dialog(e)
-        else:
-            self.world_name.error_text = "World name cannot be empty"
-            self.page.update()
-
-    async def generate_lore(self, e):
-        """Asynchronously generates world lore using the Gemini service."""
-        if not self.world_name.value:
-            self.world_name.error_text = "Enter a world name first"
+        if not name:
+            self.name_field.error_text = "World name cannot be empty"
             self.page.update()
             return
 
-        self.world_lore.value = ""
-        self.progress_ring.visible = True
-        self.generate_button.disabled = True
+        create_button = e.control
+        create_button.disabled = True
+        create_button.text = "Creating..."
         self.page.update()
+        print("NewWorldDialog: UI locked for creation.")
 
-        # Call the dedicated service method instead of formatting the prompt here
-        description = await self.page.loop.run_in_executor(
-            None, self.gemini_service.generate_world_lore, self.world_name.value
-        )
+        try:
+            print("NewWorldDialog: Calling Supabase to create world...")
+            self.supabase_service.create_world(self.user_id, name, lore)
+            print("NewWorldDialog: Supabase call successful.")
 
-        self.world_lore.value = description
-        self.progress_ring.visible = False
-        self.generate_button.disabled = False
+            self.page.snack_bar = ft.SnackBar(ft.Text(f"World '{name}' created successfully!"))
+            self.page.snack_bar.open = True
+
+            # Set the data attribute to signal success to the on_dismiss handler
+            self.data = "created"
+
+            # Now, close the dialog. This will trigger on_dismiss in WorldsView.
+            self.open = False
+            self.page.update()
+            print("NewWorldDialog: Dialog closed, signaling 'created'.")
+
+        except Exception as ex:
+            print(f"NewWorldDialog: Error creating world - {ex}")
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text(f"Error creating world: {ex}"),
+                bgcolor=ft.Colors.RED_700
+            )
+            self.page.snack_bar.open = True
+            create_button.disabled = False
+            create_button.text = "Create"
+            self.page.update()
+
+    def close_dialog(self, _: ft.ControlEvent):
+        """Closes the dialog without signaling success."""
+        print("NewWorldDialog: 'Cancel' or close action triggered.")
+        self.data = "cancelled"
+        self.open = False
         self.page.update()

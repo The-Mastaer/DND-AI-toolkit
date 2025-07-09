@@ -1,58 +1,39 @@
+# src/views/main_menu_view.py
+
 import flet as ft
-from src.state import AppState
+from typing import TYPE_CHECKING
+from ..components.app_bar import AppBar
 
+if TYPE_CHECKING:
+    from ..state import AppState
 
-def MainMenuView(page: ft.Page, app_state: AppState) -> ft.View:
+class MainMenuView(ft.View):
     """
-    The main menu view of the application.
-
-    This view serves as the landing page, providing top-level navigation
-    to the different modules of the toolkit.
-
-    Args:
-        page (ft.Page): The Flet page object.
-        app_state (AppState): The global state of the application.
-
-    Returns:
-        An ft.View object representing the main menu screen.
+    The main menu view, acting as a dashboard and navigation hub.
     """
+    def __init__(self, page: ft.Page, state: 'AppState'):
+        super().__init__(route="/")
+        self.page = page
+        self.state = state
 
-    # This is a simple demonstration of accessing a service from the app_state.
-    # We could, for example, have Gemini generate a "welcome" message.
-    welcome_message = "Welcome, Dungeon Master!"
-    if app_state.gemini_service:
-        # Note: In a real app, you wouldn't block the UI thread like this.
-        # You'd use page.run_thread_safe or similar for long-running tasks.
-        # For a quick, one-off generation, this might be acceptable.
-        # welcome_message = app_state.gemini_service.generate_text("Generate a short, epic welcome for a Dungeon Master starting the D&D AI Toolkit.")
-        pass  # Disabling for now to keep UI snappy on startup.
+        self.app_bar = AppBar(
+            title="D&D AI Toolkit",
+            page=self.page,
+            state=self.state,
+        )
 
-    return ft.View(
-        route="/",
-        controls=[
+        self.controls = [
+            self.app_bar,
             ft.Column(
-                [
-                    ft.Text(welcome_message, size=32, weight=ft.FontWeight.BOLD),
-                    ft.Text("Select a module to begin:", size=18),
-                    ft.ElevatedButton(
-                        text="Campaign Manager",
-                        icon=ft.icons.BOOK,
-                        on_click=lambda _: page.go("/campaigns"),
-                        width=250
-                    ),
-                    ft.ElevatedButton(
-                        text="Settings",
-                        icon=ft.icons.SETTINGS,
-                        on_click=lambda _: page.go("/settings"),
-                        width=250
-                    ),
+                controls=[
+                    ft.ElevatedButton("Worlds", on_click=lambda _: page.go("/worlds")),
+                    # Removed "Campaigns" button, as it's now accessed via a world.
+                    ft.ElevatedButton("Characters", on_click=lambda _: page.go("/characters"), disabled=True),
+                    ft.ElevatedButton("Settings", on_click=lambda _: page.go("/settings")),
                 ],
                 alignment=ft.MainAxisAlignment.CENTER,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                spacing=20,
                 expand=True,
+                spacing=20,
             )
-        ],
-        vertical_alignment=ft.MainAxisAlignment.CENTER,
-        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-    )
+        ]

@@ -1,40 +1,52 @@
+# src/components/app_bar.py
+
 import flet as ft
+from typing import TYPE_CHECKING
 
-def AppAppBar(page: ft.Page) -> ft.AppBar:
+if TYPE_CHECKING:
+    from ..state import AppState
+
+
+class AppBar(ft.AppBar):
     """
-    Creates and returns a standard AppBar for the application.
-
-    This is a reusable UI component. It centralizes the appearance and
-    functionality of the top navigation bar, ensuring consistency across
-all views.
-
-    Args:
-        page (ft.Page): The Flet page object, used for navigation.
-
-    Returns:
-        An ft.AppBar control.
+    A custom AppBar component for consistent navigation across the app.
     """
-    return ft.AppBar(
-        leading=ft.Icon(ft.icons.DRAGON),
-        leading_width=40,
-        title=ft.Text("D&D AI Toolkit"),
-        center_title=False,
-        bgcolor=ft.colors.SURFACE_VARIANT,
-        actions=[
-            ft.IconButton(
-                icon=ft.icons.HOME,
-                tooltip="Home",
-                on_click=lambda _: page.go('/')
-            ),
-            ft.IconButton(
-                icon=ft.icons.BOOK,
-                tooltip="Campaigns",
-                on_click=lambda _: page.go('/campaigns')
-            ),
-            ft.IconButton(
-                icon=ft.icons.SETTINGS,
-                tooltip="Settings",
-                on_click=lambda _: page.go('/settings')
-            )
-        ],
-    )
+
+    def __init__(self, title: str, page: ft.Page, state: 'AppState', show_back_button: bool = False):
+        """
+        Initializes the AppBar.
+
+        Args:
+            title: The text to display in the AppBar's title.
+            page: The Flet Page object to handle navigation.
+            state: The application's state object.
+            show_back_button: If True, shows a back arrow instead of the main menu icon.
+        """
+        super().__init__()
+        self.page = page
+        self.state = state
+
+        self.leading = ft.IconButton(
+            ft.Icons.ARROW_BACK if show_back_button else ft.Icons.MENU,
+            on_click=self.handle_leading_action
+        )
+        self.leading_width = 40
+        self.title = ft.Text(title)
+        self.center_title = False
+
+        # Corrected bgcolor to a valid ft.Colors constant.
+        # SURFACE_VARIANT is not a direct color, but part of the theme engine.
+        # SURFACE_CONTAINER_HIGHEST is a valid and appropriate replacement.
+        self.bgcolor = ft.Colors.SURFACE_CONTAINER_HIGHEST
+
+        self.actions = [
+            ft.IconButton(ft.Icons.HOME, on_click=lambda _: self.page.go("/")),
+            ft.IconButton(ft.Icons.SETTINGS, on_click=lambda _: self.page.go("/settings")),
+        ]
+
+    def handle_leading_action(self, e: ft.ControlEvent):
+        """Handles the click on the leading icon (back or menu)."""
+        # A simple back navigation for now
+        if self.page.route != "/":
+            self.page.go("/")
+        # In a more complex app, this could open a navigation drawer.
