@@ -5,8 +5,8 @@ def AppAppBar(page: ft.Page) -> ft.AppBar:
     Creates and returns a standard AppBar for the application.
 
     This is a reusable UI component. It centralizes the appearance and
-    functionality of the top navigation bar, ensuring consistency across all views.
-    The primary navigation button now correctly points to the "Worlds" view.
+    functionality of the top navigation bar, ensuring consistency across
+all views.
 
     Args:
         page (ft.Page): The Flet page object, used for navigation.
@@ -15,24 +15,24 @@ def AppAppBar(page: ft.Page) -> ft.AppBar:
         An ft.AppBar control.
     """
     return ft.AppBar(
-        leading=ft.Icon(ft.Icons.AUTO_STORIES),
+        leading=ft.Icon(ft.icons.DRAGON),
         leading_width=40,
         title=ft.Text("D&D AI Toolkit"),
         center_title=False,
-        bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST, # Corrected: Replaced non-existent color
+        bgcolor=ft.colors.SURFACE_VARIANT,
         actions=[
             ft.IconButton(
-                icon=ft.Icons.HOME,
+                icon=ft.icons.HOME,
                 tooltip="Home",
                 on_click=lambda _: page.go('/')
             ),
             ft.IconButton(
-                icon=ft.Icons.PUBLIC,
-                tooltip="Worlds",
-                on_click=lambda _: page.go('/worlds')
+                icon=ft.icons.BOOK,
+                tooltip="Campaigns",
+                on_click=lambda _: page.go('/campaigns')
             ),
             ft.IconButton(
-                icon=ft.Icons.SETTINGS,
+                icon=ft.icons.SETTINGS,
                 tooltip="Settings",
                 on_click=lambda _: page.go('/settings')
             )

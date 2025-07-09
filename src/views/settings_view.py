@@ -7,9 +7,9 @@ class SettingsView(ft.View):
     """
     A view for managing application settings.
 
-    This view allows users to configure AI model parameters. Settings are
-    loaded from and saved to Flet's `page.client_storage` for persistence.
-    API keys are not managed here for security reasons.
+    This view allows users to configure AI model parameters and appearance.
+    Settings are loaded from and saved to Flet's `page.client_storage`
+    for persistence across sessions.
     """
 
     def __init__(self, page: ft.Page, app_state: AppState):
@@ -22,11 +22,31 @@ class SettingsView(ft.View):
         self.app_state = app_state
         self.settings = app_state.settings
 
-        # UI Controls
+        # --- UI Controls ---
         self.theme_switch = ft.Switch(
             label="Dark Mode",
             on_change=self.toggle_dark_mode,
-            value=page.theme_mode == ft.ThemeMode.DARK
+            value=(self.settings.theme_mode == "dark")
+        )
+
+        self.text_model_dropdown = ft.Dropdown(
+            label="Text Generation Model",
+            value=self.settings.text_model,
+            options=[
+                ft.dropdown.Option("gemini-2.5-pro"),
+                ft.dropdown.Option("gemini-2.5-flash"),
+                ft.dropdown.Option("gemini-2.5-flash-lite-preview-06-17"),
+            ]
+        )
+
+        self.image_model_dropdown = ft.Dropdown(
+            label="Image Generation Model",
+            value=self.settings.image_model,
+            options=[
+                ft.dropdown.Option("gemini-2.0-flash-preview-image-generation"),
+                ft.dropdown.Option("imagen-4.0-generate-preview-06-06"),
+                ft.dropdown.Option("imagen-3.0-generate-002"),
+            ]
         )
 
         self.temperature_slider = ft.Slider(
@@ -48,10 +68,12 @@ class SettingsView(ft.View):
                     self.theme_switch,
                     ft.Divider(),
                     ft.Text("AI Configuration", size=18, weight=ft.FontWeight.BOLD),
-                    ft.Text("Note: API keys are managed in the .env file in the project root for security."),
+                    ft.Text("Note: API keys are managed in the .env file for security."),
+                    self.text_model_dropdown,
+                    self.image_model_dropdown,
                     self.temperature_slider,
                     self.top_p_slider,
-                    ft.ElevatedButton("Save Settings", on_click=self.save_settings),
+                    ft.ElevatedButton("Save Settings", on_click=self.save_settings, icon=ft.Icons.SAVE),
                 ],
                 spacing=15,
                 width=600,
@@ -60,19 +82,26 @@ class SettingsView(ft.View):
         ]
 
     def toggle_dark_mode(self, e):
-        """Event handler to toggle the application's theme."""
-        self.page.theme_mode = (
-            ft.ThemeMode.DARK
-            if self.page.theme_mode == ft.ThemeMode.LIGHT
-            else ft.ThemeMode.LIGHT
-        )
+        """Event handler to toggle the application's theme and save it."""
+        current_theme = "dark" if e.control.value else "light"
+        self.page.theme_mode = ft.ThemeMode.DARK if current_theme == "dark" else ft.ThemeMode.LIGHT
+        self.settings.theme_mode = current_theme
+        self.save_settings(e, show_snackbar=False)  # Save without showing snackbar
         self.page.update()
 
-    def save_settings(self, e):
-        """Event handler for saving the settings to client storage."""
+    def save_settings(self, e, show_snackbar=True):
+        """
+        Event handler for saving all settings to client storage.
+
+        Args:
+            show_snackbar (bool): If True, displays a confirmation message.
+        """
         print("SettingsView: Saving settings...")
 
-        # Update settings object from UI controls
+        # Update settings object from all UI controls
+        self.settings.theme_mode = "dark" if self.theme_switch.value else "light"
+        self.settings.text_model = self.text_model_dropdown.value
+        self.settings.image_model = self.image_model_dropdown.value
         self.settings.temperature = self.temperature_slider.value
         self.settings.top_p = self.top_p_slider.value
 
@@ -83,10 +112,11 @@ class SettingsView(ft.View):
         # Update the global app state
         self.app_state.settings = self.settings
 
-        self.page.snack_bar = ft.SnackBar(
-            content=ft.Text("Settings have been saved."),
-            duration=2000
-        )
-        self.page.snack_bar.open = True
-        self.page.update()
+        if show_snackbar:
+            self.page.snack_bar = ft.SnackBar(
+                content=ft.Text("Settings have been saved."),
+                duration=2000
+            )
+            self.page.snack_bar.open = True
 
+        self.page.update()

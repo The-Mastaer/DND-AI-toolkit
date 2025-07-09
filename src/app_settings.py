@@ -1,5 +1,6 @@
 from dataclasses import dataclass, asdict
 import json
+import flet as ft
 
 
 @dataclass
@@ -7,13 +8,20 @@ class AppSettings:
     """
     A data class to hold user-configurable application settings.
 
-    This provides a structured way to manage settings like AI model parameters.
-    It includes methods for serialization to and from JSON, which is necessary
-    for storing the object in Flet's client storage.
+    This provides a structured way to manage settings like AI model parameters
+    and theme choices. It includes methods for serialization to and from JSON,
+    which is necessary for storing the object in Flet's client storage.
     """
-    model_name: str = "gemini-1.5-flash"
+    # Appearance
+    theme_mode: str = "light"  # "light" or "dark"
+
+    # Text Generation Models
+    text_model: str = "gemini-2.5-flash"
     temperature: float = 0.7
     top_p: float = 1.0
+
+    # Image Generation Models
+    image_model: str = "gemini-2.0-flash-preview-image-generation"
 
     def to_json(self) -> str:
         """Serializes the dataclass instance to a JSON string."""
