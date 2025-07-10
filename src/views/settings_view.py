@@ -14,7 +14,7 @@ from .. import prompts
 class SettingsView(ft.View):
     """
     A comprehensive settings view organized into tabs for managing the
-    application's active context, appearance, AI models, and prompts.
+    application's active context, appearance, AI models, prompts, and data sources.
     All settings are persisted in client storage for a seamless user experience.
     """
 
@@ -23,6 +23,10 @@ class SettingsView(ft.View):
         self.page = page
         self.route = "/settings"
         self.appbar = ft.AppBar(title=ft.Text("Settings"), bgcolor="surfaceVariant")
+
+        # --- File Picker for Data Sources ---
+        self.srd_file_picker = ft.FilePicker(on_result=self.on_srd_file_picked)
+        self.page.overlay.append(self.srd_file_picker) # Add to overlay
 
         # --- UI Controls ---
 
@@ -40,7 +44,7 @@ class SettingsView(ft.View):
                                                                                 ["blue", "green", "red", "indigo",
                                                                                  "orange", "teal"]])
         self.save_appearance_button = ft.FilledButton("Save Appearance", on_click=self.save_appearance_settings)
-        self.appearance_save_status = ft.Text()  # Confirmation text
+        self.appearance_save_status = ft.Text()
 
         # Tab 3: AI Models
         self.text_model_dropdown = ft.Dropdown(label="Text Generation Model",
@@ -48,7 +52,7 @@ class SettingsView(ft.View):
         self.image_model_dropdown = ft.Dropdown(label="Image Generation Model",
                                                 options=[ft.dropdown.Option(k, v) for k, v in IMAGE_MODELS.items()])
         self.save_models_button = ft.FilledButton("Save Model Settings", on_click=self.save_models)
-        self.models_save_status = ft.Text()  # Confirmation text
+        self.models_save_status = ft.Text()
 
         # Tab 4: Prompts
         self.prompt_fields = {}
@@ -59,10 +63,23 @@ class SettingsView(ft.View):
                 self.prompt_fields[prompt_name] = field
                 prompt_controls.append(field)
         self.save_prompts_button = ft.FilledButton("Save Custom Prompts", on_click=self.save_prompts)
-        self.prompts_save_status = ft.Text()  # Confirmation text
+        self.prompts_save_status = ft.Text()
         prompt_controls.extend([self.save_prompts_button, self.prompts_save_status])
 
-        # Tab 5: Advanced
+        # Tab 5: Data Sources (Controls are defined but the tab is hidden)
+        self.srd_file_path_text = ft.Text("No SRD document uploaded.")
+        self.select_srd_button = ft.ElevatedButton(
+            "Upload SRD PDF",
+            icon=ft.Icons.UPLOAD_FILE,
+            on_click=lambda _: self.srd_file_picker.pick_files(
+                allow_multiple=False,
+                allowed_extensions=["pdf"]
+            )
+        )
+        self.upload_progress = ft.ProgressRing(visible=False)
+        self.data_sources_status = ft.Text()
+
+        # Tab 6: Advanced
         self.reset_button = ft.FilledButton("Reset All Settings", on_click=self.reset_all_settings,
                                             icon=ft.Icons.WARNING, color=ft.Colors.ON_ERROR, bgcolor=ft.Colors.ERROR)
 
@@ -83,6 +100,11 @@ class SettingsView(ft.View):
                          self.models_save_status])),
                     ft.Tab("Prompts", icon=ft.Icons.EDIT_DOCUMENT,
                            content=self.build_tab_content(prompt_controls, scroll=ft.ScrollMode.AUTO)),
+                    # The Data Sources tab is now hidden by setting visible=False
+                    ft.Tab("Data Sources", icon=ft.Icons.DATA_OBJECT, content=self.build_tab_content(
+                        [ft.Text("Upload your SRD document to Supabase Storage."), self.select_srd_button,
+                         self.upload_progress, self.srd_file_path_text, self.data_sources_status]
+                    ), visible=False),
                     ft.Tab("Advanced", icon=ft.Icons.WARNING_AMBER_ROUNDED, content=self.build_tab_content(
                         [ft.Text("Warning: This will reset all saved settings to their defaults."),
                          self.reset_button])),
@@ -102,6 +124,89 @@ class SettingsView(ft.View):
         self.load_appearance_settings()
         self.load_model_settings()
         self.load_custom_prompts()
+        self.load_data_source_settings()
+
+    # --- Data Sources Tab Logic (remains for future use) ---
+    def load_data_source_settings(self):
+        """Checks client storage to see if an SRD has been uploaded."""
+        print("Checking for existing SRD document...")
+        srd_uploaded = self.page.client_storage.get("srd_document_uploaded")
+        if srd_uploaded:
+            print("SRD document flag found in client storage.")
+            self.srd_file_path_text.value = "SRD document is uploaded to your cloud storage."
+            self.srd_file_path_text.color = ft.Colors.GREEN_700
+        else:
+            print("No SRD document flag found.")
+            self.srd_file_path_text.value = "No SRD document has been uploaded."
+            self.srd_file_path_text.color = None
+        self.update()
+
+    async def on_srd_file_picked(self, e: ft.FilePickerResultEvent):
+        """Callback to upload the selected PDF to Supabase Storage."""
+        print("File picker result received.")
+        if not e.files:
+            print("File selection cancelled by user.")
+            self.data_sources_status.value = "File selection cancelled."
+            self.data_sources_status.color = ft.Colors.ORANGE
+            self.update()
+            return
+
+        # Show progress and disable button
+        self.upload_progress.visible = True
+        self.select_srd_button.disabled = True
+        self.update()
+
+        try:
+            # Get the selected file's local path
+            picked_file = e.files[0]
+            local_file_path = picked_file.path
+            print(f"File picked: {local_file_path}")
+
+            # Define a fixed public path for the file inside the Supabase bucket
+            bucket_path = "public/srd.pdf"
+            print(f"Target bucket path: {bucket_path}")
+
+            # Read the file content as binary
+            print("Reading file content...")
+            with open(local_file_path, 'rb') as f:
+                file_content = f.read()
+            print(f"File read successfully. Size: {len(file_content)} bytes.")
+
+            # Upload using our service, now with the correct content type and bucket
+            print("Attempting to upload to Supabase...")
+            await asyncio.to_thread(
+                supabase.upload_file,
+                bucket_name="documents",
+                file_path_in_bucket=bucket_path,
+                file_body=file_content,
+                content_type="application/pdf"
+            )
+            print("Upload thread completed.")
+
+            # On success, save a flag to client storage
+            self.page.client_storage.set("srd_document_uploaded", True)
+            self.page.client_storage.set("srd_document_bucket_path", bucket_path) # Also save the path
+            print("Client storage updated with upload status and path.")
+
+            # Update UI to show success
+            self.data_sources_status.value = "SRD successfully uploaded!"
+            self.data_sources_status.color = ft.Colors.GREEN_700
+            self.load_data_source_settings()
+
+        except Exception as ex:
+            print(f"An error occurred during upload: {ex}")
+            self.data_sources_status.value = f"Upload failed: {ex}"
+            self.data_sources_status.color = ft.Colors.RED
+        finally:
+            # Hide progress and re-enable button
+            print("Finalizing UI state.")
+            self.upload_progress.visible = False
+            self.select_srd_button.disabled = False
+            self.update()
+            await asyncio.sleep(4)
+            self.data_sources_status.value = ""
+            self.update()
+
 
     # --- Context Tab Logic ---
     def load_context_settings(self):
@@ -112,7 +217,7 @@ class SettingsView(ft.View):
 
     def load_worlds(self):
         try:
-            response = supabase.table('worlds').select('id, name').execute()
+            response = supabase.client.table('worlds').select('id, name').execute()
             if response.data:
                 self.world_dropdown.options = [ft.dropdown.Option(w['id'], w['name']) for w in response.data]
                 self.world_dropdown.disabled = False
@@ -126,7 +231,7 @@ class SettingsView(ft.View):
 
     def load_campaigns(self, world_id):
         try:
-            response = supabase.table('campaigns').select('id, name').eq('world_id', world_id).execute()
+            response = supabase.client.table('campaigns').select('id, name').eq('world_id', world_id).execute()
             self.campaign_dropdown.options.clear()
             if response.data:
                 lang_code = self.language_dropdown.value
@@ -227,7 +332,8 @@ class SettingsView(ft.View):
         keys_to_remove = [
             "active_language_code", "active_world_id", "active_campaign_id",
             "theme_mode", "color_scheme",
-            "text_model", "image_model"
+            "text_model", "image_model",
+            "srd_document_uploaded", "srd_document_bucket_path" # Also reset the data source
         ]
         for key in keys_to_remove:
             if self.page.client_storage.contains_key(key):
