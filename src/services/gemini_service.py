@@ -1,5 +1,3 @@
-# src/services/gemini_service.py
-
 from google import genai
 from ..config import GEMINI_API_KEY
 
@@ -7,46 +5,38 @@ from ..config import GEMINI_API_KEY
 class GeminiService:
     """
     A service class to interact with the Google Gemini API.
-    It handles model configuration and text generation requests using the genai.Client.
+    This version is simplified to its core function to help expose underlying errors.
     """
 
     def __init__(self):
         """
-        Initializes the Gemini API client with the provided API key.
+        Initializes the Gemini Service and configures the API key.
         """
-        try:
-            # According to the knowledge base, we should use genai.Client
-            self.client = genai.Client(api_key=GEMINI_API_KEY)
-            print("Gemini Service client initialized successfully.")
-        except Exception as e:
-            # This is a critical failure, so we print and raise
-            print(f"CRITICAL: Failed to initialize Gemini client: {e}")
-            raise
+        if not GEMINI_API_KEY:
+            raise ValueError("GEMINI_API_KEY is not set. Please add it to your configuration.")
 
-    def generate_text(self, prompt: str, model_name: str) -> str:
+        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        self.model_name = 'models/gemini-1.5-flash'
+
+    def get_text_response(self, prompt_text: str) -> str:
         """
-        Generates text using a specified Gemini model.
+        Sends a prompt to the Gemini API and returns the text response.
+        This function will now let any exception "bubble up" to the caller.
 
         Args:
-            prompt: The input prompt for the model.
-            model_name: The name of the model to use (e.g., "gemini-1.5-flash").
+            prompt_text: The full prompt to send to the model.
 
         Returns:
             The generated text as a string.
-
-        Raises:
-            Exception: Propagates any exception from the API call upwards
-                       so the UI layer can handle it.
         """
-        print(f"Generating text with model: {model_name}")
-        try:
-            # Use the client.generate_content method as specified
-            response = self.client.generate_content(
-                model=f"models/{model_name}",
-                contents=prompt
-            )
-            return response.text
-        except Exception as e:
-            print(f"Error generating text with Gemini: {e}")
-            # Re-raise the exception to be caught by the calling view
-            raise e
+        print("--- Sending Prompt to Gemini ---")
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt_text
+        )
+
+        print("--- Full Gemini Response ---")
+        print(response)
+
+        # We will attempt to access .text and let the calling function handle any error.
+        return response.text

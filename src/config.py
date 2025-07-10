@@ -15,3 +15,13 @@ SUPABASE_KEY: Optional[str] = os.getenv("SUPABASE_KEY")
 
 # Gemini API configuration
 GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
+
+# A centralized dictionary for supported languages.
+# This makes it easy to add or remove languages in one place.
+SUPPORTED_LANGUAGES = {
+    "en": "English",
+    "de": "German",
+    "es": "Spanish",
+    "fr": "French",
+    "cs": "Czech",
+}

@@ -1,111 +1,133 @@
 import flet as ft
 from ..services.supabase_service import supabase
-from ..components.new_world_dialog import NewWorldDialog
+from ..config import SUPPORTED_LANGUAGES
+from ..components.translate_dialog import TranslateDialog
 
-# The class now inherits from ft.Column, not the deprecated ft.UserControl.
-class WorldsView(ft.Column):
+
+class WorldsView(ft.View):
     """
-    A view that displays a list of worlds from the database.
-    It inherits from ft.Column to structure its content vertically.
+    The main view for managing worlds. It displays a list of existing worlds
+    and provides controls to create, edit, or delete them.
     """
-    def __init__(self):
+
+    def __init__(self, page: ft.Page):
         super().__init__()
-        # Configure the Column properties
-        self.expand = True
-        self.spacing = 10
+        self.page = page
+        self.route = "/worlds"
+        self.selected_world = None
 
         # --- UI Controls ---
-        self.progress_ring = ft.ProgressRing(width=32, height=32, stroke_width=4)
+        self.new_world_button = ft.IconButton(
+            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
+            tooltip="Create New World",
+            on_click=lambda _: self.page.go("/new-world")
+        )
+        self.language_dropdown = ft.Dropdown(
+            label="Lore Language",
+            options=[ft.dropdown.Option(code, name) for code, name in SUPPORTED_LANGUAGES.items()],
+            value="en",
+            on_change=self.language_changed,
+        )
         self.worlds_list = ft.ListView(expand=True, spacing=10)
-        self.new_world_dialog = NewWorldDialog(self.on_world_created)
+        self.world_details = ft.Container(
+            content=ft.Text("Select a world to see details or create a new one."),
+            alignment=ft.alignment.center,
+            expand=True,
+            padding=20
+        )
+        self.translate_dialog = TranslateDialog(on_save_callback=self.load_worlds)
 
-        # --- Build the initial layout in the constructor ---
+        # --- Assembling the View ---
+        self.appbar = ft.AppBar(title=ft.Text("World Manager"), bgcolor="surfaceVariant")
         self.controls = [
             ft.Row(
-                controls=[
-                    ft.Text("Worlds", style=ft.TextThemeStyle.HEADLINE_MEDIUM),
-                    ft.IconButton(
-                        icon=ft.Icons.ADD,
-                        tooltip="Create New World",
-                        on_click=self.open_new_world_dialog,
+                [
+                    ft.Container(
+                        content=ft.Column(
+                            [
+                                ft.Text("Your Worlds", style=ft.TextThemeStyle.HEADLINE_SMALL),
+                                self.language_dropdown,
+                                self.worlds_list,
+                                ft.Row([self.new_world_button])
+                            ]
+                        ),
+                        width=250,
+                        padding=10,
+                        border=ft.border.only(right=ft.BorderSide(1, "outline"))
                     ),
+                    self.world_details
                 ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            ),
-            ft.Divider(),
-            self.worlds_list, # Add the ListView to the Column
+                expand=True,
+            )
         ]
 
     def did_mount(self):
-        """
-        Called when the control is added to the page.
-        This is the ideal place to perform initial data loading.
-        """
-        self.page.dialog = self.new_world_dialog
-        self._get_worlds()
+        self.page.overlay.append(self.translate_dialog)
+        self.page.update()
+        self.load_worlds()
 
-    def _get_worlds(self):
-        """
-        Fetches the list of worlds from the Supabase database.
-        Updates the worlds_list control with the fetched data.
-        """
+    def load_worlds(self):
+        current_selection_id = self.selected_world['id'] if self.selected_world else None
         self.worlds_list.controls.clear()
-        self.worlds_list.controls.append(
-            ft.Row(
-                controls=[self.progress_ring, ft.Text("Loading worlds...")],
-                alignment=ft.MainAxisAlignment.CENTER,
-                spacing=10
-            )
-        )
-        self.update()
-
         try:
-            response = supabase.table('worlds').select("*").execute()
-            print("Supabase response:", response)
-            self.worlds_list.controls.clear() # Clear the loading indicator
-
+            response = supabase.table('worlds').select('*').is_('user_id', 'NULL').execute()
             if response.data:
                 for world in response.data:
                     self.worlds_list.controls.append(
-                        ft.ListTile(
-                            title=ft.Text(world['name']),
-                            subtitle=ft.Text(world['description'], max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
-                            leading=ft.Icon(ft.Icons.PUBLIC),
-                            on_click=self.select_world,
-                            data=world,
-                        )
+                        ft.ListTile(title=ft.Text(world['name']), data=world, on_click=self.select_world)
                     )
+                    if world['id'] == current_selection_id:
+                        self.selected_world = world
             else:
-                self.worlds_list.controls.append(ft.Text("No worlds found. Create one to get started!"))
-
+                self.worlds_list.controls.append(ft.Text("No worlds found. Create one!"))
         except Exception as e:
-            print(f"Error fetching worlds: {e}")
-            self.worlds_list.controls.clear()
-            self.worlds_list.controls.append(ft.Text(f"Error loading worlds: {e}"))
-
+            print(f"Error loading worlds: {e}")
+            self.worlds_list.controls.append(ft.Text(f"Error: {e}"))
         self.update()
+        if self.selected_world:
+            self.update_details_view()
 
     def select_world(self, e):
-        """
-        Handles the event when a user clicks on a world in the list.
-        """
-        world_id = e.control.data['id']
-        self.page.session.set("selected_world_id", world_id)
-        print(f"Selected World ID: {world_id} stored in session.")
-        self.page.go("/campaigns")
+        self.selected_world = e.control.data
+        self.update_details_view()
 
-    def open_new_world_dialog(self, e):
-        """
-        Opens the dialog to create a new world.
-        """
-        self.page.dialog.open = True
-        self.page.update()
+    def language_changed(self, e):
+        if self.selected_world:
+            self.update_details_view()
 
-    def on_world_created(self):
-        """
-        Callback to refresh the list after a new world is created.
-        """
-        self._get_worlds()
+    def open_translate_dialog(self, e):
+        if self.selected_world:
+            self.translate_dialog.open_dialog(self.selected_world, self.language_dropdown.value)
 
-    # The build() method is no longer needed when inheriting from a layout control.
-    # The layout is defined in the __init__ method.
+    def open_edit_view(self, e):
+        """Navigates to the edit view with the current world and language."""
+        if self.selected_world:
+            world_id = self.selected_world['id']
+            lang_code = self.language_dropdown.value
+            self.page.go(f"/edit-world/{world_id}/{lang_code}")
+
+    def update_details_view(self):
+        if not self.selected_world:
+            self.world_details.content = ft.Text("Select a world.")
+            self.update()
+            return
+
+        world_data = self.selected_world
+        selected_lang_code = self.language_dropdown.value
+
+        header = ft.Row(
+            [
+                ft.Text(f"Details for {world_data['name']}", style=ft.TextThemeStyle.HEADLINE_MEDIUM, expand=True),
+                ft.IconButton(ft.Icons.EDIT, tooltip="Edit World", on_click=self.open_edit_view),
+                ft.IconButton(ft.Icons.TRANSLATE, tooltip="Translate Lore", on_click=self.open_translate_dialog),
+            ],
+            alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+        )
+        lore_text = world_data.get('lore', {}).get(selected_lang_code)
+        lore_content = ft.Text(lore_text, selectable=True) if lore_text else ft.Text(
+            f"No lore available in {SUPPORTED_LANGUAGES.get(selected_lang_code, 'the selected language')}.",
+            italic=True)
+
+        self.world_details.content = ft.Column([header, ft.Divider(), lore_content], spacing=10,
+                                               scroll=ft.ScrollMode.AUTO)
+        self.update()
