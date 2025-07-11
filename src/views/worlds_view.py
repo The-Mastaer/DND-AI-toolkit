@@ -104,7 +104,7 @@ class WorldsView(ft.View):
                 return
 
             worlds_response = await supabase.get_worlds(user.user.id)
-            # *** FIX: Correctly access the .data attribute from the response ***
+            # Correctly access the .data attribute from the response
             self.worlds_data = worlds_response.data if worlds_response else []
 
             self.worlds_list.controls.clear()
@@ -218,11 +218,25 @@ class WorldsView(ft.View):
 
     def translate_click(self, e):
         """Opens the translation dialog."""
+        print("translate_click: Method called.")
         if self.selected_world:
-            # *** FIX: Create dialog on-demand to ensure self.page is available ***
+            print(f"translate_click: selected_world is present: {self.selected_world['name']}")
             translate_dialog = TranslateDialog(page=self.page, on_save_callback=self.on_translation_saved)
-            self.page.dialog = translate_dialog
+            print("translate_click: TranslateDialog instantiated.")
+
+            # 1. Prepare the dialog's content and internal state
             translate_dialog.open_dialog(self.selected_world, self.language_dropdown.value)
+            print("translate_click: open_dialog method called on TranslateDialog (dialog prepared).")
+
+            # 2. Explicitly set the dialog's 'open' property to True
+            translate_dialog.open = True
+            print("translate_click: translate_dialog.open set to True.")
+
+            # 3. Open the dialog on the page's overlay
+            self.page.open(translate_dialog)
+            print("translate_click: page.open(translate_dialog) called.")
+        else:
+            print("translate_click: No world selected. Button disabled or selection issue.")
 
     def on_translation_saved(self):
         """Callback function after a translation is saved."""

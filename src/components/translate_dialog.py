@@ -15,7 +15,6 @@ class TranslateDialog(ft.AlertDialog):
 
     def __init__(self, page: ft.Page, on_save_callback):
         super().__init__()
-        # *** FIX: Store the page reference passed from the parent view ***
         self.page = page
         self.on_save_callback = on_save_callback
         self.modal = True
@@ -56,8 +55,12 @@ class TranslateDialog(ft.AlertDialog):
 
     def open_dialog(self, world_data, source_lang_code):
         """
-        Sets up and opens the dialog with the specific world's data.
+        Sets up the dialog with the specific world's data and prepares its content.
+        Note: This method no longer sets self.open = True or calls page.update().
+        The parent view (WorldsView) is now responsible for setting self.open = True
+        and calling page.open(self).
         """
+        print("TranslateDialog.open_dialog: Method called (preparing content).")
         self.world_data = world_data
         self.source_lang_code = source_lang_code
         self.actions[1].disabled = True
@@ -74,11 +77,8 @@ class TranslateDialog(ft.AlertDialog):
         ]
         if self.target_language_dropdown.options:
             self.target_language_dropdown.value = self.target_language_dropdown.options[0].key
+        print("TranslateDialog.open_dialog: Dialog content prepared.")
 
-        # The dialog now has a valid self.page reference
-        self.page.dialog = self
-        self.open = True
-        self.page.update()
 
     def generate_translation_click(self, e):
         """Wrapper to call the async generation method."""
@@ -150,7 +150,8 @@ class TranslateDialog(ft.AlertDialog):
             if self.on_save_callback:
                 self.on_save_callback()
 
-            self.close_dialog(None)
+            # Using page.close() to explicitly close the dialog
+            self.page.close(self)
 
         except Exception as ex:
             self.show_error(f"Database Error: {ex}")
@@ -162,6 +163,8 @@ class TranslateDialog(ft.AlertDialog):
 
     def close_dialog(self, e):
         """Closes the dialog and resets its state."""
-        self.open = False
+        # Using page.close() to explicitly close the dialog
+        self.page.close(self)
         self.title = ft.Text("Translate World Lore")
-        self.page.update()
+        self.open = False # Reset open state for next time if it's reused without full re-instantiation.
+        self.page.update() # Update the page to reflect the closed state (this might be redundant with page.close())
