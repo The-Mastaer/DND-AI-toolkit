@@ -50,6 +50,11 @@ class MainView(ft.View):
                     label="Worlds",
                 ),
                 ft.NavigationRailDestination(
+                    icon=ft.Icons.PERCENT_OUTLINED,
+                    selected_icon=ft.Icons.PERSON,
+                    label="Worlds",
+                ),
+                ft.NavigationRailDestination(
                     icon=ft.Icons.SETTINGS_OUTLINED,
                     selected_icon=ft.Icons.SETTINGS,
                     label="Settings",
@@ -138,6 +143,8 @@ class MainView(ft.View):
         elif index == 1:
             self.page.go("/worlds")
         elif index == 2:
+            self.page.go("/characters")
+        elif index == 3:
             self.page.go("/settings")
 
     def tabs_changed(self, e):

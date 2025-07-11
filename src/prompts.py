@@ -48,3 +48,7 @@ Do not use any external knowledge or other D&D rulesets.
 If the answer cannot be found in the provided document, state that clearly.
 Answer concisely and accurately. This is a single-turn, question-and-answer interaction; you do not need to remember chat history.
 """
+
+GENERATE_NPC_PROMPT = """
+Test
+"""

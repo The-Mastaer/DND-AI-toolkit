@@ -5,23 +5,25 @@ from ..services.supabase_service import supabase
 from ..services.gemini_service import GeminiService # Keep import for type hinting
 from ..components.translate_dialog import TranslateDialog
 from ..components.character_form_dialog import CharacterFormDialog
-import json
+import asyncio
 
 class CharactersView(ft.Column):
     """
     A view that displays a list of characters for a selected campaign.
     Inherits from ft.Column to structure its content vertically.
     """
-    def __init__(self, page: ft.Page, gemini_service: GeminiService): # Accept page and gemini_service
+    def __init__(self, page: ft.Page): # Accept page and gemini_service
         super().__init__()
         self.page = page # Store page immediately
+        self.route = "/characters"
+        self.appbar = ft.AppBar(title=ft.Text("Characters"), bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST)
         self.expand = True
         self.spacing = 10
 
         self.characters_list = ft.ListView(expand=True, spacing=10)
         self.progress_ring = ft.ProgressRing(width=32, height=32, stroke_width=4)
         self.selected_campaign_id = None
-        self.gemini_service = gemini_service # Store the passed GeminiService instance
+        self.gemini_service = GeminiService() # Store the passed GeminiService instance
 
         # Refs for controls that need to be accessed later
         self.character_type_filter_ref = ft.Ref[ft.SegmentedButton]()
@@ -36,7 +38,6 @@ class CharactersView(ft.Column):
         self.controls = [
             ft.Row(
                 controls=[
-                    ft.Text("Characters", style=ft.TextThemeStyle.HEADLINE_MEDIUM),
                     ft.IconButton(
                         icon=ft.Icons.ADD,
                         tooltip="Create New Character",
@@ -71,7 +72,10 @@ class CharactersView(ft.Column):
         Called when the control is added to the page.
         Sets up the page reference for dialogs and fetches initial data.
         """
-        self.selected_campaign_id = self.page.session.get("selected_campaign_id")
+        self.page.run_task(self.load_initial_data)
+
+    async def load_initial_data(self):
+        self.selected_campaign_id = self.page.client_storage.get("active_campaign_id")
         # Enable/disable add button based on campaign selection
         self.controls[0].controls[1].disabled = self.selected_campaign_id is None
 

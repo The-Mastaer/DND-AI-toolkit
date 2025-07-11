@@ -3,11 +3,13 @@
 import flet as ft
 import asyncio
 import json
+
 from .views.main_view import MainView
 from .views.worlds_view import WorldsView
 from .views.settings_view import SettingsView
 from .views.login_view import LoginView
 from .views.campaigns_view import CampaignsView
+from .views.characters_view import CharactersView
 from .services.supabase_service import supabase
 
 
@@ -33,6 +35,7 @@ async def main(page: ft.Page):
         "/settings": SettingsView,
         "/login": LoginView,
         "/campaigns": CampaignsView,
+        "/characters": CharactersView
     }
 
     async def route_change(route):
