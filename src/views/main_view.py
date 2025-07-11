@@ -1,8 +1,11 @@
+# src/views/main_view.py
+
 import flet as ft
 import asyncio
 
 from ..services.supabase_service import supabase
 from ..services.gemini_service import GeminiService
+from ..prompts import SRD_QUERY_PROMPT
 
 
 class MainView(ft.View):
@@ -23,10 +26,10 @@ class MainView(ft.View):
         self.page = page
         self.route = "/"
         self.gemini_service = GeminiService()
-        self.lore_chat_session = None
 
-        # --- Caching for Rules Lawyer ---
-        self.gemini_srd_file = None  # This will hold the Gemini File object in memory
+        # --- State Management ---
+        self.lore_chat_session = None
+        self.gemini_srd_file = None
 
         # --- Navigation Rail ---
         self.navigation_rail = ft.NavigationRail(
@@ -42,8 +45,8 @@ class MainView(ft.View):
                     label="Home",
                 ),
                 ft.NavigationRailDestination(
-                    icon=ft.Icons.LANGUAGE_OUTLINED,
-                    selected_icon=ft.Icons.LANGUAGE,
+                    icon=ft.Icons.BOOK_ONLINE_OUTLINED,
+                    selected_icon=ft.Icons.BOOK_ONLINE,
                     label="Worlds",
                 ),
                 ft.NavigationRailDestination(
@@ -56,10 +59,9 @@ class MainView(ft.View):
         )
 
         # --- Chat UI Controls ---
-        # FIX: Create separate ListView instances for each chat to isolate their state.
         self.lore_chat_history = ft.ListView(expand=True, spacing=10, auto_scroll=True)
         self.rules_chat_history = ft.ListView(expand=True, spacing=10, auto_scroll=True)
-        self.active_chat_history = self.lore_chat_history  # Start with Lore Master active
+        self.active_chat_history = self.lore_chat_history
 
         self.user_input = ft.TextField(
             hint_text="Ask the Lore Master...",
@@ -68,6 +70,7 @@ class MainView(ft.View):
             shift_enter=True,
             min_lines=1,
             max_lines=5,
+            filled=True,
         )
         self.send_button = ft.IconButton(
             icon=ft.Icons.SEND_ROUNDED,
@@ -76,7 +79,7 @@ class MainView(ft.View):
         )
         self.chat_progress = ft.ProgressRing(width=24, height=24, stroke_width=3, visible=False)
 
-        # --- Assembling the Chat Interface ---
+        # --- Main Content Area with Tabs ---
         self.main_content = ft.Tabs(
             selected_index=0,
             animation_duration=300,
@@ -102,28 +105,20 @@ class MainView(ft.View):
                 [
                     self.navigation_rail,
                     ft.VerticalDivider(width=1),
-                    ft.Column([
-                        self.main_content
-                    ],
-                        expand=True)
+                    ft.Column([self.main_content], expand=True)
                 ],
                 expand=True,
             )
         ]
 
     def build_chat_view(self, chat_list_view: ft.ListView):
-        """Builds the reusable chat interface container for a specific chat history."""
+        """Builds the reusable chat interface container."""
         return ft.Container(
             content=ft.Column(
                 [
-                    self.chat_progress,
-                    chat_list_view,  # Use the provided ListView instance
-                    ft.Row(
-                        controls=[
-                            self.user_input,
-                            self.send_button,
-                        ]
-                    ),
+                    ft.Row([self.chat_progress]),
+                    chat_list_view,
+                    ft.Row(controls=[self.user_input, self.send_button]),
                 ],
                 expand=True,
             ),
@@ -132,8 +127,8 @@ class MainView(ft.View):
         )
 
     def did_mount(self):
-        """Initializes the view and loads the correct chat context."""
-        self.initialize_lore_master()
+        """Initializes the view when it's added to the page."""
+        self.page.run_task(self.initialize_lore_master)
 
     def nav_change(self, e):
         """Handles navigation when a destination on the NavigationRail is selected."""
@@ -144,8 +139,6 @@ class MainView(ft.View):
             self.page.go("/worlds")
         elif index == 2:
             self.page.go("/settings")
-        else:
-            self.page.go("/")
 
     def tabs_changed(self, e):
         """Handles switching between Lore Master and Rules Lawyer tabs."""
@@ -153,83 +146,87 @@ class MainView(ft.View):
         if selected_index == 0:
             self.user_input.hint_text = "Ask the Lore Master..."
             self.active_chat_history = self.lore_chat_history
-            self.initialize_lore_master()
+            self.page.run_task(self.initialize_lore_master)
         else:
             self.user_input.hint_text = "Ask the Rules Lawyer..."
             self.active_chat_history = self.rules_chat_history
-            # FIX: Use page.run_task to correctly run a coroutine from a sync handler
             self.page.run_task(self.initialize_rules_lawyer)
         self.update()
 
-    def initialize_lore_master(self):
+    async def initialize_lore_master(self):
         """Sets up the Lore Master chat, loading context from the database."""
         self.lore_chat_history.controls.clear()
         self.lore_chat_history.controls.append(ft.Text("Loading campaign context...", italic=True))
         self.update()
 
-        lang_code = self.page.client_storage.get("active_language_code") or "en"
-        world_id = self.page.client_storage.get("active_world_id")
-        campaign_id = self.page.client_storage.get("active_campaign_id")
+        keys_to_fetch = ["active_language_code", "active_world_id", "active_campaign_id", "prompt.lore_master"]
+        tasks = [asyncio.to_thread(self.page.client_storage.get, key) for key in keys_to_fetch]
+        results = await asyncio.gather(*tasks)
+        settings = dict(zip(keys_to_fetch, results))
+
+        lang_code = settings.get("active_language_code") or "en"
+        world_id = settings.get("active_world_id")
+        campaign_id = settings.get("active_campaign_id")
 
         if not world_id or not campaign_id:
             self.lore_chat_history.controls.clear()
             self.lore_chat_history.controls.append(
-                ft.Text("No active world or campaign selected.", color=ft.Colors.RED))
+                ft.Text("No active world or campaign selected in Settings.", color=ft.Colors.RED))
             self.update()
             return
 
         try:
-            world_res = supabase.client.table('worlds').select('name, lore').eq('id', world_id).single().execute()
-            campaign_res = supabase.client.table('campaigns').select('name, party_info, session_history').eq('id',
-                                                                                                             campaign_id).single().execute()
+            world_response = await supabase.get_world_details(int(world_id))
+            world_data = world_response.data if world_response else None
+
+            campaign_response = await supabase.get_campaign_details(int(campaign_id))
+            campaign_data = campaign_response.data if campaign_response else None
+
+            if not world_data or not campaign_data:
+                raise Exception("World or Campaign data could not be loaded.")
+
             context = f"""
-            World: {world_res.data['name']}
-            Lore: {world_res.data.get('lore', {}).get(lang_code, "N/A")}
-            Campaign: {campaign_res.data.get('name', {}).get(lang_code, "N/A")}
-            Party: {campaign_res.data.get('party_info', {}).get(lang_code, "N/A")}
-            History: {campaign_res.data.get('session_history', {}).get(lang_code, "N/A")}
+            World: {world_data['name']}
+            Lore: {world_data.get('lore', {}).get(lang_code, "N/A")}
+            Campaign: {campaign_data.get('name', {}).get(lang_code, "N/A")}
+            Party: {campaign_data.get('party_info', {}).get(lang_code, "N/A")}
+            History: {campaign_data.get('session_history', {}).get(lang_code, "N/A")}
             """
-            self.lore_chat_session = self.gemini_service.start_chat_session(initial_prompt=context)
+            self.lore_chat_session = self.gemini_service.start_chat_session(initial_context=context)
             self.lore_chat_history.controls.clear()
             self.lore_chat_history.controls.append(
-                ft.Text("Context loaded. Ask about the campaign!", color=ft.Colors.GREEN_700))
+                ft.Text("Context loaded. Ask about your campaign!", color=ft.Colors.GREEN_700))
         except Exception as e:
             self.lore_chat_history.controls.clear()
             self.lore_chat_history.controls.append(ft.Text(f"Error loading context: {e}", color=ft.Colors.RED))
         self.update()
 
     async def initialize_rules_lawyer(self):
-        """
-        Loads the SRD document into memory and prepares it for Gemini, if not already loaded.
-        """
+        """Loads the SRD document and prepares it for Gemini, if not already loaded."""
         if self.gemini_srd_file:
-            self.rules_chat_history.controls.append(
-                ft.Text("SRD document is ready. Ask a rules question.", color=ft.Colors.GREEN_700))
+            self.rules_chat_history.controls.append(ft.Text("SRD document is ready.", color=ft.Colors.GREEN_700))
             self.update()
             return
 
+        self.rules_chat_history.controls.clear()
         self.rules_chat_history.controls.append(ft.Text("Loading SRD document...", italic=True))
         self.update()
 
-        srd_uploaded = self.page.client_storage.get("srd_document_uploaded")
-        if not srd_uploaded:
+        # *** FIX: Check only for the bucket path. If it exists, the file is considered uploaded. ***
+        srd_bucket_path = await asyncio.to_thread(self.page.client_storage.get, "srd_document_bucket_path")
+        if not srd_bucket_path:
             self.rules_chat_history.controls.clear()
-            self.rules_chat_history.controls.append(ft.Text("No SRD document found.", color=ft.Colors.ORANGE))
+            self.rules_chat_history.controls.append(
+                ft.Text("No SRD document uploaded in Settings.", color=ft.Colors.ORANGE))
             self.update()
             return
 
-        srd_bucket_path = self.page.client_storage.get("srd_document_bucket_path")
-
-        gemini_file = await asyncio.to_thread(
-            self.gemini_service.upload_srd_to_gemini,
-            srd_bucket_path
-        )
-
+        gemini_file = await self.gemini_service.upload_srd_to_gemini(srd_bucket_path)
         if gemini_file:
             self.gemini_srd_file = gemini_file
             self.rules_chat_history.controls.clear()
             self.rules_chat_history.controls.append(
-                ft.Text("SRD document is ready. Ask a rules question.", color=ft.Colors.GREEN_700))
+                ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN_700))
         else:
             self.rules_chat_history.controls.clear()
             self.rules_chat_history.controls.append(ft.Text("Failed to load SRD document.", color=ft.Colors.RED))
@@ -238,8 +235,7 @@ class MainView(ft.View):
     async def send_message_click(self, e):
         """Handles the sending of a message from the user input field."""
         user_text = self.user_input.value
-        if not user_text:
-            return
+        if not user_text: return
 
         self.user_input.value = ""
         self.send_button.disabled = True
@@ -253,30 +249,28 @@ class MainView(ft.View):
         try:
             selected_tab = self.main_content.selected_index
             response_text = ""
-
-            if selected_tab == 0:  # Lore Master
+            if selected_tab == 0:
                 if self.lore_chat_session:
+                    # *** FIX: Run the synchronous send_message in a separate thread ***
                     response = await asyncio.to_thread(self.lore_chat_session.send_message, user_text)
                     response_text = response.text
                 else:
                     response_text = "Error: Lore Master session not initialized."
-
-            else:  # Rules Lawyer
+            else:
                 if self.gemini_srd_file:
-                    response_text = await asyncio.to_thread(
-                        self.gemini_service.query_srd_file,
-                        question=user_text,
-                        srd_file=self.gemini_srd_file
-                    )
+                    srd_prompt = await asyncio.to_thread(self.page.client_storage.get,
+                                                         "prompt.rules_lawyer") or SRD_QUERY_PROMPT
+                    response_text = await self.gemini_service.query_srd_file(question=user_text,
+                                                                             srd_file=self.gemini_srd_file,
+                                                                             system_prompt=srd_prompt)
                 else:
-                    response_text = "Error: SRD document not ready. Please wait or switch tabs."
+                    response_text = "Error: SRD document not ready."
 
-            self.active_chat_history.controls.append(ft.Row(
-                [ft.Icon(ft.Icons.SMART_TOY), ft.Markdown(response_text, selectable=True, extension_set="gitHubWeb")]))
-
+            self.active_chat_history.controls.append(
+                ft.Row([ft.Icon(ft.Icons.SMART_TOY),
+                        ft.Markdown(response_text, selectable=True, extension_set="gitHubWeb")]))
         except Exception as ex:
             self.active_chat_history.controls.append(ft.Text(f"An error occurred: {ex}", color=ft.Colors.RED))
-
         finally:
             self.send_button.disabled = False
             self.chat_progress.visible = False

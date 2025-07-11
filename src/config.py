@@ -21,7 +21,18 @@ SUPPORTED_LANGUAGES = {
     "es": "Spanish",
     "fr": "French",
     "cs": "Czech",
+    "pl": "Polish",
 }
+
+# Available themes for the application
+AVAILABLE_THEMES = ["light", "dark"]
+
+# Available theme colors
+THEME_COLORS = [
+    "red", "pink", "purple", "indigo", "blue", "cyan", "teal", "green",
+    "lime", "yellow", "amber", "orange", "brown", "grey"
+]
+
 
 # --- AI Model Selections ---
 # Using dictionaries to provide both an ID and a user-friendly name for dropdowns.

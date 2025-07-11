@@ -41,7 +41,7 @@ Session History & Notes:
 Now, answer the user's question.
 """
 
-RULES_LAWYER_PROMPT = """
+SRD_QUERY_PROMPT = """
 You are a Rules Lawyer, an expert on the Dungeons & Dragons rules contained within the provided document.
 Your task is to answer the user's question based *only* on the information found in the document named '{srd_document_name}'.
 Do not use any external knowledge or other D&D rulesets.

@@ -1,5 +1,7 @@
+# src/components/translate_dialog.py
+
 import flet as ft
-import traceback  # Import the traceback module for detailed error logging
+import traceback
 from ..config import SUPPORTED_LANGUAGES
 from ..services.gemini_service import GeminiService
 from ..prompts import TRANSLATE_LORE_PROMPT
@@ -11,19 +13,22 @@ class TranslateDialog(ft.AlertDialog):
     A dialog for translating world lore from one language to another using the Gemini API.
     """
 
-    def __init__(self, on_save_callback):
+    def __init__(self, page: ft.Page, on_save_callback):
         super().__init__()
+        # *** FIX: Store the page reference passed from the parent view ***
+        self.page = page
         self.on_save_callback = on_save_callback
         self.modal = True
         self.title = ft.Text("Translate World Lore")
         self.world_data = None
         self.source_lang_code = None
+        self.gemini_service = GeminiService()
 
         # --- UI Controls ---
         self.source_language_text = ft.Text()
         self.target_language_dropdown = ft.Dropdown(label="Translate to")
         self.progress_ring = ft.ProgressRing(visible=False)
-        self.translate_button = ft.FilledButton("Translate", on_click=self.generate_translation)
+        self.translate_button = ft.FilledButton("Translate", on_click=self.generate_translation_click)
         self.translated_lore_field = ft.TextField(
             label="Translated Lore",
             multiline=True,
@@ -45,7 +50,7 @@ class TranslateDialog(ft.AlertDialog):
 
         self.actions = [
             ft.TextButton("Cancel", on_click=self.close_dialog),
-            ft.FilledButton("Save Translation", on_click=self.save_translation, disabled=True),
+            ft.FilledButton("Save Translation", on_click=self.save_translation_click, disabled=True),
         ]
         self.actions_alignment = ft.MainAxisAlignment.END
 
@@ -70,13 +75,18 @@ class TranslateDialog(ft.AlertDialog):
         if self.target_language_dropdown.options:
             self.target_language_dropdown.value = self.target_language_dropdown.options[0].key
 
+        # The dialog now has a valid self.page reference
         self.page.dialog = self
         self.open = True
         self.page.update()
 
-    def generate_translation(self, e):
+    def generate_translation_click(self, e):
+        """Wrapper to call the async generation method."""
+        self.page.run_task(self.generate_translation)
+
+    async def generate_translation(self):
         """
-        Calls the Gemini API to generate the translation and logs detailed errors.
+        Calls the Gemini API to generate the translation.
         """
         self.progress_ring.visible = True
         self.translate_button.disabled = True
@@ -93,16 +103,11 @@ class TranslateDialog(ft.AlertDialog):
             return
 
         try:
-            # Corrected the keyword to match the placeholder in the prompt string.
             prompt = TRANSLATE_LORE_PROMPT.format(
-                source_language=SUPPORTED_LANGUAGES.get(self.source_lang_code),
-                target_language=target_lang_name,
-                text=source_lore  # Changed from 'text_to_translate' to 'text'
+                language=target_lang_name,
+                text=source_lore
             )
-
-            service = GeminiService()
-            translated_text = service.get_text_response(prompt)
-
+            translated_text = await self.gemini_service.get_text_response(prompt)
             self.translated_lore_field.value = translated_text
             self.translated_lore_field.read_only = False
             self.actions[1].disabled = False
@@ -110,7 +115,6 @@ class TranslateDialog(ft.AlertDialog):
         except Exception as ex:
             print("--- Detailed Traceback in Translation Dialog ---")
             traceback.print_exc()
-            print("--- End of Traceback ---")
             self.show_error(f"Error: {type(ex).__name__}. See console for details.")
 
         finally:
@@ -118,7 +122,11 @@ class TranslateDialog(ft.AlertDialog):
             self.translate_button.disabled = False
             self.update()
 
-    def save_translation(self, e):
+    def save_translation_click(self, e):
+        """Wrapper to call the async save method."""
+        self.page.run_task(self.save_translation)
+
+    async def save_translation(self):
         """
         Saves the new translation to the world's lore in the database.
         """
@@ -133,7 +141,8 @@ class TranslateDialog(ft.AlertDialog):
         updated_lore[target_lang_code] = translated_text
 
         try:
-            supabase.table('worlds').update({'lore': updated_lore}).eq('id', self.world_data['id']).execute()
+            world_record = {'lore': updated_lore}
+            await supabase.update_world(self.world_data['id'], world_record)
 
             self.page.snack_bar = ft.SnackBar(content=ft.Text("Translation saved!"), bgcolor=ft.Colors.GREEN_700)
             self.page.snack_bar.open = True
@@ -141,7 +150,7 @@ class TranslateDialog(ft.AlertDialog):
             if self.on_save_callback:
                 self.on_save_callback()
 
-            self.close_dialog(e)
+            self.close_dialog(None)
 
         except Exception as ex:
             self.show_error(f"Database Error: {ex}")

@@ -1,3 +1,5 @@
+# src/views/worlds_view.py
+
 import flet as ft
 from ..services.supabase_service import supabase
 from ..config import SUPPORTED_LANGUAGES
@@ -6,120 +8,222 @@ from ..components.translate_dialog import TranslateDialog
 
 class WorldsView(ft.View):
     """
-    The main view for managing worlds. It displays a list of existing worlds
-    and provides controls to create, edit, or delete them.
+    View for managing D&D worlds. It allows users to view, create, edit,
+    and delete their worlds.
     """
 
     def __init__(self, page: ft.Page):
         super().__init__()
         self.page = page
         self.route = "/worlds"
+        self.worlds_data = []
         self.selected_world = None
 
-        # --- UI Controls ---
-        self.new_world_button = ft.IconButton(icon=ft.Icons.ADD_CIRCLE_OUTLINE, tooltip="Create New World",
-                                              on_click=lambda _: self.page.go("/new-world"))
-        self.language_dropdown = ft.Dropdown(label="Lore Language",
-                                             options=[ft.dropdown.Option(code, name) for code, name in
-                                                      SUPPORTED_LANGUAGES.items()], value="en",
-                                             on_change=self.language_changed)
-        self.worlds_list = ft.ListView(expand=True, spacing=10)
-        self.world_details = ft.Container(content=ft.Text("Select a world to see details or create a new one."),
-                                          alignment=ft.alignment.center, expand=True, padding=20)
-        self.translate_dialog = TranslateDialog(on_save_callback=self.load_worlds)
+        # --- UI CONTROLS ---
+        self.appbar = ft.AppBar(title=ft.Text("World Manager"), bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST)
 
-        # --- Assembling the View ---
-        self.appbar = ft.AppBar(title=ft.Text("World Manager"), bgcolor="surfaceVariant")
+        self.worlds_list = ft.ListView(expand=1, spacing=10)
+        self.language_dropdown = ft.Dropdown(
+            label="Lore Language",
+            options=[ft.dropdown.Option(code, name) for code, name in SUPPORTED_LANGUAGES.items()],
+            value="en",
+            on_change=self.on_language_change,
+        )
+        self.world_name_field = ft.TextField(label="World Name", read_only=True)
+        self.world_lore_field = ft.TextField(
+            label="World Lore",
+            multiline=True,
+            read_only=True,
+            expand=True
+        )
+        self.error_text = ft.Text("", color=ft.Colors.RED)
+
+        # --- BUTTONS ---
+        self.new_world_button = ft.IconButton(icon=ft.Icons.ADD, on_click=self.new_world_click)
+        self.delete_world_button = ft.IconButton(icon=ft.Icons.DELETE, on_click=self.delete_world_click, disabled=True)
+        self.manage_campaigns_button = ft.ElevatedButton("Manage Campaigns", on_click=self.manage_campaigns_click,
+                                                         disabled=True)
+        self.translate_button = ft.ElevatedButton("Translate", on_click=self.translate_click, disabled=True)
+        self.save_world_button = ft.ElevatedButton("Save World", on_click=self.save_world_click, visible=False)
+
+        # --- LAYOUT ---
         self.controls = [
             ft.Row(
                 [
-                    ft.Container(
-                        content=ft.Column(
-                            [ft.Text("Your Worlds", style=ft.TextThemeStyle.HEADLINE_SMALL), self.language_dropdown,
-                             self.worlds_list, ft.Row([self.new_world_button])]),
-                        width=250, padding=10, border=ft.border.only(right=ft.BorderSide(1, "outline"))
+                    ft.Column(
+                        [
+                            ft.Text("Your Worlds", style=ft.TextThemeStyle.HEADLINE_SMALL),
+                            self.language_dropdown,
+                            self.worlds_list,
+                            self.error_text,
+                            ft.Row([self.new_world_button, self.delete_world_button]),
+                        ],
+                        width=300,
+                        spacing=10,
                     ),
-                    self.world_details
+                    ft.VerticalDivider(width=1),
+                    ft.Column(
+                        [
+                            self.world_name_field,
+                            self.world_lore_field,
+                            ft.Row(
+                                [
+                                    self.manage_campaigns_button,
+                                    self.translate_button,
+                                    self.save_world_button,
+                                ],
+                                alignment=ft.MainAxisAlignment.END,
+                            ),
+                        ],
+                        expand=True,
+                        spacing=10,
+                    ),
                 ],
                 expand=True,
             )
         ]
 
     def did_mount(self):
-        self.page.overlay.append(self.translate_dialog)
-        self.page.update()
-        self.load_worlds()
+        """Called when the view is mounted."""
+        self.page.run_task(self.load_worlds)
 
-    def load_worlds(self):
-        current_selection_id = self.selected_world['id'] if self.selected_world else None
+    async def load_worlds(self):
+        """
+        Fetches worlds from the Supabase database and populates the list view.
+        """
         self.worlds_list.controls.clear()
+        self.worlds_list.controls.append(ft.ProgressRing())
+        self.update()
+
         try:
-            response = supabase.table('worlds').select('*').is_('user_id', 'NULL').execute()
-            if response.data:
-                for world in response.data:
+            user = await supabase.get_user()
+            if not user:
+                self.error_text.value = "User not authenticated. Should not happen."
+                self.worlds_list.controls.clear()
+                self.update()
+                return
+
+            worlds_response = await supabase.get_worlds(user.user.id)
+            # *** FIX: Correctly access the .data attribute from the response ***
+            self.worlds_data = worlds_response.data if worlds_response else []
+
+            self.worlds_list.controls.clear()
+            if self.worlds_data:
+                for world in self.worlds_data:
                     self.worlds_list.controls.append(
-                        ft.ListTile(title=ft.Text(world['name']), data=world, on_click=self.select_world))
-                    if world['id'] == current_selection_id:
-                        self.selected_world = world
+                        ft.ListTile(
+                            title=ft.Text(world['name']),
+                            on_click=self.select_world,
+                            data=world,
+                        )
+                    )
             else:
                 self.worlds_list.controls.append(ft.Text("No worlds found. Create one!"))
+
         except Exception as e:
-            print(f"Error loading worlds: {e}")
-            self.worlds_list.controls.append(ft.Text(f"Error: {e}"))
+            self.error_text.value = f"Error: {e}"
+            self.worlds_list.controls.clear()
+
         self.update()
-        if self.selected_world:
-            self.update_details_view()
 
     def select_world(self, e):
+        """Handles the selection of a world from the list."""
         self.selected_world = e.control.data
-        self.update_details_view()
+        lang_code = self.language_dropdown.value
+        self.world_name_field.value = self.selected_world['name']
+        self.world_lore_field.value = self.selected_world.get('lore', {}).get(lang_code, "")
 
-    def language_changed(self, e):
+        self.delete_world_button.disabled = False
+        self.manage_campaigns_button.disabled = False
+        self.translate_button.disabled = False
+        self.world_name_field.read_only = False
+        self.world_lore_field.read_only = False
+        self.save_world_button.visible = True
+        self.update()
+
+    def on_language_change(self, e):
+        """Updates the lore text when the language is changed."""
         if self.selected_world:
-            self.update_details_view()
+            lang_code = self.language_dropdown.value
+            self.world_lore_field.value = self.selected_world.get('lore', {}).get(lang_code, "")
+            self.update()
 
-    def open_translate_dialog(self, e):
-        if self.selected_world:
-            self.translate_dialog.open_dialog(self.selected_world, self.language_dropdown.value)
+    def new_world_click(self, e):
+        """Clears the form to create a new world."""
+        self.selected_world = None
+        self.world_name_field.value = ""
+        self.world_lore_field.value = ""
+        self.world_name_field.read_only = False
+        self.world_lore_field.read_only = False
+        self.save_world_button.visible = True
+        self.delete_world_button.disabled = True
+        self.manage_campaigns_button.disabled = True
+        self.translate_button.disabled = True
+        self.update()
 
-    def open_edit_view(self, e):
-        if self.selected_world:
-            self.page.go(f"/edit-world/{self.selected_world['id']}/{self.language_dropdown.value}")
-
-    def open_campaigns_view(self, e):
-        """Navigates to the campaigns view for the current world."""
-        if self.selected_world:
-            self.page.go(f"/campaigns/{self.selected_world['id']}/{self.language_dropdown.value}")
-
-    def update_details_view(self):
-        if not self.selected_world:
-            self.world_details.content = ft.Text("Select a world.")
+    async def save_world_click(self, e):
+        """Saves a new or existing world to the database."""
+        user = await supabase.get_user()
+        if not user:
+            self.error_text.value = "Authentication error."
             self.update()
             return
 
-        world_data = self.selected_world
-        selected_lang_code = self.language_dropdown.value
+        lang_code = self.language_dropdown.value
+        world_name = self.world_name_field.value
+        world_lore_text = self.world_lore_field.value
 
-        # The "Manage Campaigns" button is now part of the header row
-        header = ft.Row(
-            [
-                ft.Text(f"Details for {world_data['name']}", style=ft.TextThemeStyle.HEADLINE_MEDIUM, expand=True),
-                ft.FilledButton("Manage Campaigns", icon=ft.Icons.LIBRARY_BOOKS, on_click=self.open_campaigns_view),
-                ft.IconButton(ft.Icons.EDIT, tooltip="Edit World", on_click=self.open_edit_view),
-                ft.IconButton(ft.Icons.TRANSLATE, tooltip="Translate Lore", on_click=self.open_translate_dialog),
-            ],
-            alignment=ft.MainAxisAlignment.START,  # Changed to START to group buttons
-            spacing=10
-        )
-        lore_text = world_data.get('lore', {}).get(selected_lang_code)
-        lore_content = ft.Text(lore_text, selectable=True) if lore_text else ft.Text(
-            f"No lore available in {SUPPORTED_LANGUAGES.get(selected_lang_code, 'the selected language')}.",
-            italic=True)
+        if not world_name:
+            self.error_text.value = "World name cannot be empty."
+            self.update()
+            return
 
-        # The button is no longer at the bottom of the column
-        self.world_details.content = ft.Column(
-            [header, ft.Divider(), lore_content],
-            spacing=10,
-            scroll=ft.ScrollMode.AUTO
-        )
-        self.update()
+        if self.selected_world:
+            lore_data = self.selected_world.get('lore', {})
+            lore_data[lang_code] = world_lore_text
+            world_record = {
+                'name': world_name,
+                'lore': lore_data,
+            }
+            await supabase.update_world(self.selected_world['id'], world_record)
+        else:
+            world_record = {
+                'name': world_name,
+                'lore': {lang_code: world_lore_text},
+                'user_id': user.user.id,
+            }
+            await supabase.create_world(world_record)
+
+        await self.load_worlds()
+
+    async def delete_world_click(self, e):
+        """Deletes the selected world."""
+        if self.selected_world:
+            await supabase.delete_world(self.selected_world['id'])
+            self.selected_world = None
+            self.world_name_field.value = ""
+            self.world_lore_field.value = ""
+            self.world_name_field.read_only = True
+            self.world_lore_field.read_only = True
+            self.save_world_button.visible = False
+            self.delete_world_button.disabled = True
+            self.manage_campaigns_button.disabled = True
+            self.translate_button.disabled = True
+            await self.load_worlds()
+
+    def manage_campaigns_click(self, e):
+        """Navigates to the campaign management view for the selected world."""
+        if self.selected_world:
+            self.page.go(f"/worlds/{self.selected_world['id']}/campaigns")
+
+    def translate_click(self, e):
+        """Opens the translation dialog."""
+        if self.selected_world:
+            # *** FIX: Create dialog on-demand to ensure self.page is available ***
+            translate_dialog = TranslateDialog(page=self.page, on_save_callback=self.on_translation_saved)
+            self.page.dialog = translate_dialog
+            translate_dialog.open_dialog(self.selected_world, self.language_dropdown.value)
+
+    def on_translation_saved(self):
+        """Callback function after a translation is saved."""
+        self.page.run_task(self.load_worlds)

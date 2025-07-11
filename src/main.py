@@ -1,62 +1,85 @@
-import flet as ft
+# src/main.py
 
-from .services.supabase_service import supabase
+import flet as ft
+import asyncio
+import json
 from .views.main_view import MainView
 from .views.worlds_view import WorldsView
 from .views.settings_view import SettingsView
-from .views.new_world_view import NewWorldView
-from .views.edit_world_view import EditWorldView
+from .views.login_view import LoginView
 from .views.campaigns_view import CampaignsView
-from .views.new_campaign_view import NewCampaignView
-from .views.edit_campaign_view import EditCampaignView
+from .services.supabase_service import supabase
 
 
-def main(page: ft.Page):
+async def main(page: ft.Page):
     """
     The main entry point for the Flet application.
     """
+    await supabase.initialize()
+
     page.title = "D&D AI Toolkit"
-    page.window_width = 800
-    page.window_height = 600
+    page.window_width = 1200
+    page.window_height = 800
 
-    # --- Load and apply theme settings at startup ---
-    # This ensures the app opens with the user's saved theme.
-    theme_mode_str = page.client_storage.get("theme_mode") or "system"
-    color_scheme_seed = page.client_storage.get("color_scheme") or "blue"
-    page.theme_mode = ft.ThemeMode(theme_mode_str)
-    page.theme = ft.Theme(color_scheme_seed=color_scheme_seed)
-    page.dark_theme = ft.Theme(color_scheme_seed=color_scheme_seed)
+    # *** FIX: Load and apply theme settings on startup for persistence ***
+    theme_mode = await asyncio.to_thread(page.client_storage.get, "app.theme_mode") or "dark"
+    theme_color = await asyncio.to_thread(page.client_storage.get, "app.theme_color") or "blue"
+    page.theme_mode = theme_mode
+    page.theme = ft.Theme(color_scheme_seed=theme_color)
 
-    # ------------------------------------------------
+    app_views = {
+        "/": MainView,
+        "/worlds": WorldsView,
+        "/settings": SettingsView,
+        "/login": LoginView,
+        "/campaigns": CampaignsView,
+    }
 
-    def route_change(e):
+    async def route_change(route):
         """
-        Handles navigation by changing the views displayed on the page.
+        Handles route changes by checking authentication and directing
+        the user to the appropriate view.
         """
-        print(f"Current route: {e.route}")
+        print(f"Current route: {route.route}")
+
+        saved_session_json = await asyncio.to_thread(page.client_storage.get, "supabase.session")
+        if saved_session_json:
+            session_data = json.loads(saved_session_json)
+            try:
+                await supabase.set_session(session_data['access_token'], session_data['refresh_token'])
+                print("--- Successfully restored session from client storage. ---")
+            except Exception as e:
+                print(f"--- Failed to restore session, clearing storage: {e} ---")
+                await asyncio.to_thread(page.client_storage.remove, "supabase.session")
+
+        user_session = await supabase.get_user()
+
+        if not user_session and page.route != "/login":
+            page.go("/login")
+            return
+
+        if user_session and page.route == "/login":
+            page.go("/")
+            return
+
         page.views.clear()
-        page.views.append(MainView(page))
 
-        troute = ft.TemplateRoute(e.route)
+        base_view_class = app_views.get("/login") if not user_session else app_views.get("/")
+        page.views.append(base_view_class(page))
 
-        if troute.match("/worlds"):
-            page.views.append(WorldsView(page))
-        elif troute.match("/new-world"):
-            page.views.append(NewWorldView(page))
-        elif troute.match("/settings"):
-            page.views.append(SettingsView(page))
-        elif troute.match("/edit-world/:world_id/:lang_code"):
-            page.views.append(EditWorldView(page, int(troute.world_id), troute.lang_code))
-        elif troute.match("/campaigns/:world_id/:lang_code"):
-            page.views.append(CampaignsView(page, int(troute.world_id), troute.lang_code))
-        elif troute.match("/new-campaign/:world_id/:lang_code"):
-            page.views.append(NewCampaignView(page, int(troute.world_id), troute.lang_code))
-        elif troute.match("/edit-campaign/:campaign_id/:lang_code"):
-            page.views.append(EditCampaignView(page, int(troute.campaign_id), troute.lang_code))
+        if page.route != "/" and page.route != "/login":
+            if page.route in app_views:
+                page.views.append(app_views[page.route](page))
+            elif page.route.startswith("/worlds/") and page.route.endswith("/campaigns"):
+                page.views.append(app_views["/campaigns"](page))
 
         page.update()
 
     def view_pop(view):
+        """
+        Handles the 'back' action, popping the current view from the stack
+        and navigating to the previous one.
+        """
         page.views.pop()
         top_view = page.views[-1]
         page.go(top_view.route)
@@ -67,4 +90,4 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main, port=8550, view=ft.AppView.FLET_APP)
+    ft.app(target=main)

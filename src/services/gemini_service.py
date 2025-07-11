@@ -1,80 +1,62 @@
+# src/services/gemini_service.py
+
 from google import genai
+from google.genai import types
 from ..config import GEMINI_API_KEY
 from ..services.supabase_service import supabase
 import tempfile
 import pathlib
-
-
-class _ChatSessionWrapper:
-    """
-    A helper class to manage a conversational chat session's history.
-    """
-
-    def __init__(self, client: genai.Client, model_name: str, initial_prompt: str = None):
-        self.client = client
-        self.model_name = model_name
-        self.history = []
-        if initial_prompt:
-            self.history.extend([
-                {'role': 'user', 'parts': [{'text': initial_prompt}]},
-                {'role': 'model',
-                 'parts': [{'text': "Understood. I am ready to answer questions based on the provided context."}]}
-            ])
-
-    def send_message(self, message: str):
-        """Sends a message, including history, to the model."""
-        self.history.append({'role': 'user', 'parts': [{'text': message}]})
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=self.history
-        )
-        try:
-            response_text = response.text
-        except Exception:
-            response_text = "My response was blocked. Please try rephrasing your message."
-        self.history.append({'role': 'model', 'parts': [{'text': response_text}]})
-        return response
+import asyncio
 
 
 class GeminiService:
     """
-    Service class for interacting with the Google Gemini API.
+    Service class for all interactions with the Google Gemini API.
     """
 
     def __init__(self):
+        """
+        Initializes the Gemini client.
+        """
         if not GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY is not set.")
+            raise ValueError("GEMINI_API_KEY is not set in the environment variables.")
         self.client = genai.Client(api_key=GEMINI_API_KEY)
-        self.model_name = 'models/gemini-1.5-flash'
+        self.model_name = 'gemini-1.5-flash'
 
-    def start_chat_session(self, initial_prompt: str = None):
-        """Starts a new conversational chat for the Lore Master."""
-        return _ChatSessionWrapper(
-            client=self.client,
-            model_name=self.model_name,
-            initial_prompt=initial_prompt
-        )
+    def start_chat_session(self, initial_context: str):
+        """
+        Starts a new conversational chat session.
+        """
+        print("--- Starting new Gemini Chat Session ---")
+        history = [
+            {'role': 'user', 'parts': [{'text': initial_context}]},
+            {'role': 'model',
+             'parts': [{'text': "Understood. I am ready to answer questions based on the provided context."}]}
+        ]
+        chat = self.client.chats.create(model=self.model_name, history=history)
+        return chat
 
-    def upload_srd_to_gemini(self, srd_bucket_path: str):
+    async def upload_srd_to_gemini(self, srd_bucket_path: str):
         """
         Downloads the SRD from Supabase and uploads it to the Gemini File API.
-        This is now a separate, one-time operation.
         """
         try:
-            print("Downloading SRD from Supabase for Gemini upload...")
-            file_bytes = supabase.download_file("documents", srd_bucket_path)
-            print("Download complete. Uploading to Gemini File API...")
+            print("--- Downloading SRD from Supabase for Gemini upload... ---")
+            file_bytes = await supabase.download_file("documents", srd_bucket_path)
+            print("--- Download complete. Uploading to Gemini File API... ---")
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                 tmp_file.write(file_bytes)
                 tmp_file_path = pathlib.Path(tmp_file.name)
 
             try:
-                srd_file = self.client.files.upload(
-                    path=tmp_file_path,
-                    display_name="SRD Document"
+                print(f"Uploading file from temporary path: {tmp_file_path}")
+                srd_file = await asyncio.to_thread(
+                    self.client.files.upload,
+                    file=tmp_file_path,
+                    display_name="D&D SRD Document"
                 )
-                print(f"Successfully uploaded to Gemini as: {srd_file.name}")
+                print(f"--- Successfully uploaded to Gemini as: {srd_file.name} ---")
                 return srd_file
             finally:
                 tmp_file_path.unlink()
@@ -82,19 +64,36 @@ class GeminiService:
             print(f"--- ERROR during SRD upload to Gemini: {e} ---")
             return None
 
-    def query_srd_file(self, question: str, srd_file: genai.files):
+    async def query_srd_file(self, question: str, srd_file: types.File, system_prompt: str):
         """
         Queries the already-uploaded SRD file with a user's question.
-        This is the new, efficient method for the Rules Lawyer.
         """
-        print(f"Querying Gemini with file {srd_file.name}...")
-        prompt = (
-            f"You are a D&D Rules Lawyer. Your answers must be based *only* on the provided SRD document. "
-            f"If the answer isn't in the document, say 'That rule is not covered in the provided SRD document.'\n\n"
-            f"--- USER QUESTION ---\n{question}"
-        )
-        response = self.client.models.generate_content(
-            model=self.model_name,
-            contents=[prompt, srd_file]
-        )
-        return response.text
+        print(f"--- Querying Gemini with file {srd_file.name}... ---")
+
+        # *** FIX: Combine the system prompt and the user's question ***
+        full_prompt = f"{system_prompt}\n\nUSER QUESTION: {question}"
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=[full_prompt, srd_file]
+            )
+            return response.text
+        except Exception as e:
+            print(f"--- ERROR during SRD query: {e} ---")
+            return f"An error occurred while querying the SRD: {e}"
+
+    async def get_text_response(self, prompt: str) -> str:
+        """
+        Gets a simple text response from the model for non-chat tasks.
+        """
+        print("--- Getting simple text response from Gemini ---")
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=prompt
+            )
+            return response.text
+        except Exception as e:
+            print(f"--- ERROR during text generation: {e} ---")
+            return f"An error occurred: {e}"
