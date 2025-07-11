@@ -29,7 +29,7 @@ class MainView(ft.View):
 
         # --- State Management ---
         self.lore_chat_session = None
-        self.gemini_srd_file = None
+        self.gemini_srd_file = None # Stores the actual Gemini File object (types.File)
 
         # --- Navigation Rail ---
         self.navigation_rail = ft.NavigationRail(
@@ -202,35 +202,51 @@ class MainView(ft.View):
         self.update()
 
     async def initialize_rules_lawyer(self):
-        """Loads the SRD document and prepares it for Gemini, if not already loaded."""
-        if self.gemini_srd_file:
-            self.rules_chat_history.controls.append(ft.Text("SRD document is ready.", color=ft.Colors.GREEN_700))
-            self.update()
-            return
-
+        """Loads the SRD document and prepares it for Gemini, if not already loaded or retrieved."""
         self.rules_chat_history.controls.clear()
         self.rules_chat_history.controls.append(ft.Text("Loading SRD document...", italic=True))
         self.update()
 
-        # *** FIX: Check only for the bucket path. If it exists, the file is considered uploaded. ***
-        srd_bucket_path = await asyncio.to_thread(self.page.client_storage.get, "srd_document_bucket_path")
-        if not srd_bucket_path:
-            self.rules_chat_history.controls.clear()
-            self.rules_chat_history.controls.append(
-                ft.Text("No SRD document uploaded in Settings.", color=ft.Colors.ORANGE))
-            self.update()
-            return
+        # Try to retrieve Gemini File URI from client storage
+        gemini_srd_file_name = await asyncio.to_thread(self.page.client_storage.get, "gemini_srd_file_name")
 
-        gemini_file = await self.gemini_service.upload_srd_to_gemini(srd_bucket_path)
-        if gemini_file:
-            self.gemini_srd_file = gemini_file
+        if gemini_srd_file_name:
+            print(f"Attempting to retrieve Gemini SRD file '{gemini_srd_file_name}' from Gemini API...")
+            self.gemini_srd_file = await self.gemini_service.get_gemini_file_by_name(gemini_srd_file_name)
+
+        if self.gemini_srd_file:
             self.rules_chat_history.controls.clear()
-            self.rules_chat_history.controls.append(
-                ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN_700))
+            self.rules_chat_history.controls.append(ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN_700))
         else:
-            self.rules_chat_history.controls.clear()
-            self.rules_chat_history.controls.append(ft.Text("Failed to load SRD document.", color=ft.Colors.RED))
+            # If not found in Gemini or retrieval failed, proceed with Supabase download and Gemini upload
+            srd_bucket_path = await asyncio.to_thread(self.page.client_storage.get, "srd_document_bucket_path")
+            if not srd_bucket_path:
+                self.rules_chat_history.controls.clear()
+                self.rules_chat_history.controls.append(
+                    ft.Text("No SRD document uploaded in Settings.", color=ft.Colors.ORANGE))
+                self.update()
+                return
+
+            print(f"SRD file not found in Gemini, attempting to upload from Supabase path: {srd_bucket_path}")
+            uploaded_file_name = await self.gemini_service.upload_srd_to_gemini(srd_bucket_path)
+
+            if uploaded_file_name:
+                # Store the Gemini File URI for future sessions
+                await asyncio.to_thread(self.page.client_storage.set, "gemini_srd_file_name", uploaded_file_name)
+                self.gemini_srd_file = await self.gemini_service.get_gemini_file_by_name(uploaded_file_name) # Get the actual File object
+
+                if self.gemini_srd_file:
+                    self.rules_chat_history.controls.clear()
+                    self.rules_chat_history.controls.append(
+                        ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN_700))
+                else:
+                    self.rules_chat_history.controls.clear()
+                    self.rules_chat_history.controls.append(ft.Text("Failed to retrieve SRD document from Gemini after upload.", color=ft.Colors.RED))
+            else:
+                self.rules_chat_history.controls.clear()
+                self.rules_chat_history.controls.append(ft.Text("Failed to upload SRD document to Gemini.", color=ft.Colors.RED))
         self.update()
+
 
     async def send_message_click(self, e):
         """Handles the sending of a message from the user input field."""
@@ -242,8 +258,10 @@ class MainView(ft.View):
         self.chat_progress.visible = True
         self.update()
 
+        # Add user message to chat history, with expand=True for wrapping
         self.active_chat_history.controls.append(
-            ft.Row([ft.Icon(ft.Icons.PERSON), ft.Text(user_text, selectable=True)]))
+            ft.Row([ft.Icon(ft.Icons.PERSON), ft.Text(user_text, selectable=True, expand=True)])
+        )
         self.update()
 
         try:
@@ -251,7 +269,7 @@ class MainView(ft.View):
             response_text = ""
             if selected_tab == 0:
                 if self.lore_chat_session:
-                    # *** FIX: Run the synchronous send_message in a separate thread ***
+                    # Run the synchronous send_message in a separate thread
                     response = await asyncio.to_thread(self.lore_chat_session.send_message, user_text)
                     response_text = response.text
                 else:
@@ -266,9 +284,11 @@ class MainView(ft.View):
                 else:
                     response_text = "Error: SRD document not ready."
 
+            # Add AI response to chat history, with expand=True for wrapping
             self.active_chat_history.controls.append(
                 ft.Row([ft.Icon(ft.Icons.SMART_TOY),
-                        ft.Markdown(response_text, selectable=True, extension_set="gitHubWeb")]))
+                        ft.Markdown(response_text, selectable=True, extension_set=ft.MarkdownExtensionSet.GITHUB_WEB, expand=True)])
+            )
         except Exception as ex:
             self.active_chat_history.controls.append(ft.Text(f"An error occurred: {ex}", color=ft.Colors.RED))
         finally:
