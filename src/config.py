@@ -53,61 +53,10 @@ IMAGE_MODELS = {
 DEFAULT_TEXT_MODEL = "gemini-2.5-flash"
 DEFAULT_IMAGE_MODEL = "gemini-2.0-flash-preview-image-generation"
 
-# --- Generator options ---
-DND_RACES = [
-    "Dragonborn",
-    "Dwarf",
-    "Elf",
-    "Gnome",
-    "Half-Elf",
-    "Halfling",
-    "Half-Orc",
-    "Human",
-    "Tiefling"
-]
-
-DND_CLASSES = [
-    "Barbarian",
-    "Bard",
-    "Cleric",
-    "Druid",
-    "Fighter",
-    "Monk",
-    "Paladin",
-    "Ranger",
-    "Rogue",
-    "Sorcerer",
-    "Warlock",
-    "Wizard"
-]
-
-DND_BACKGROUNDS = [
-    "Acolyte",
-    "Charlatan",
-    "Criminal",
-    "Entertainer",
-    "Folk Hero",
-    "Guild Artisan",
-    "Hermit",
-    "Noble",
-    "Outlander",
-    "Sage",
-    "Sailor",
-    "Soldier",
-    "Urchin"
-]
-
-# Sensible defaults for other generation parameters
-DND_ENVIRONMENTS = [
-    "Urban",
-    "Forest",
-    "Mountain",
-    "Coastal",
-    "Swamp",
-    "Underdark",
-    "Arctic",
-    "Desert"
-]
-
+# --- D&D Specific Constants ---
+DND_RACES = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"]
+DND_CLASSES = ["Barbarian", "Bard", "Cleric", "Druid", "Fighter", "Monk", "Paladin", "Ranger", "Rogue", "Sorcerer", "Warlock", "Wizard"]
+DND_BACKGROUNDS = ["Acolyte", "Charlatan", "Criminal", "Entertainer", "Folk Hero", "Guild Artisan", "Hermit", "Noble", "Outlander", "Sage", "Sailor", "Soldier", "Urchin"]
+DND_ENVIRONMENTS = ["Arctic", "Coastal", "Desert", "Forest", "Grassland", "Mountain", "Swamp", "Underdark", "Urban"]
 DND_HOSTILITIES = ["Friendly", "Neutral", "Hostile"]
 DND_RARITIES = ["Common", "Uncommon", "Rare", "Very Rare", "Legendary"]

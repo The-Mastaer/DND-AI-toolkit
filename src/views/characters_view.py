@@ -11,13 +11,20 @@ class CharactersView(ft.View):
     A view that displays a list of characters and handles navigation
     to the character creation/editing form.
     """
+    # DEBUG FIX: Corrected __init__ to accept gemini_service
+    def __init__(self, page: ft.Page, gemini_service: GeminiService):
+        """
+        Initializes the CharactersView.
 
-    def __init__(self, page: ft.Page):
+        Args:
+            page (ft.Page): The Flet page object.
+            gemini_service (GeminiService): The singleton instance of the Gemini service.
+        """
         super().__init__()
         self.page = page
         self.route = "/characters"
+        self.gemini_service = gemini_service
 
-        # The AppBar includes a back button for consistent navigation.
         self.appbar = ft.AppBar(
             title=ft.Text("Characters"),
             leading=ft.IconButton(
@@ -29,46 +36,37 @@ class CharactersView(ft.View):
         )
 
         # UI Controls
-        self.add_character_button_ref = ft.Ref[ft.IconButton]()
-        self.character_type_filter_ref = ft.Ref[ft.SegmentedButton]()
+        self.add_character_button = ft.IconButton(
+            icon=ft.Icons.ADD_CIRCLE_OUTLINE,
+            tooltip="Create New Character",
+            on_click=self.open_new_character_form,
+            disabled=True
+        )
+        self.character_type_filter = ft.SegmentedButton(
+            selected={"NPC"},
+            segments=[
+                ft.Segment(value="NPC", label=ft.Text("NPCs")),
+                ft.Segment(value="PC", label=ft.Text("PCs")),
+            ],
+            on_change=self._on_character_type_change,
+            allow_empty_selection=False,
+        )
         self.characters_list = ft.ListView(expand=True, spacing=10)
         self.progress_ring = ft.ProgressRing(width=32, height=32, stroke_width=4)
 
         # State
         self.selected_campaign_id = None
 
-        # NOTE: The old dialog is no longer needed and has been removed.
-
-        # The main content of the view is a Column in the controls list.
         self.controls = [
             ft.Column(
                 [
                     ft.Row(
-                        controls=[
-                            ft.IconButton(
-                                ref=self.add_character_button_ref,
-                                icon=ft.Icons.ADD_CIRCLE_OUTLINE,
-                                tooltip="Create New Character",
-                                on_click=self.open_new_character_dialog,
-                                disabled=True
-                            ),
-                        ],
+                        controls=[self.add_character_button],
                         alignment=ft.MainAxisAlignment.END,
                     ),
                     ft.Divider(height=1),
                     ft.Row(
-                        [
-                            ft.SegmentedButton(
-                                ref=self.character_type_filter_ref,
-                                selected={"NPC"},
-                                segments=[
-                                    ft.Segment(value="NPC", label=ft.Text("NPCs")),
-                                    ft.Segment(value="PC", label=ft.Text("PCs")),
-                                ],
-                                on_change=self._on_character_type_change,
-                                allow_empty_selection=False,
-                            )
-                        ],
+                        [self.character_type_filter],
                         alignment=ft.MainAxisAlignment.CENTER
                     ),
                     ft.Container(
@@ -90,21 +88,10 @@ class CharactersView(ft.View):
         """Called when the control is added to the page to fetch initial data."""
         self.page.run_task(self.load_initial_data)
 
-    def refresh_view(self):
-        """Callback to refresh the view by re-running the async data load."""
-        self.page.run_task(self._get_characters)
-
     async def load_initial_data(self):
         """Asynchronously loads the active campaign ID and then fetches the characters."""
-        print("--- CharactersView: Loading initial data... ---")
-        # The campaign ID is correctly fetched as an integer (or string convertible to int)
         self.selected_campaign_id = await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id")
-        print(f"--- CharactersView: Active Campaign ID from storage is '{self.selected_campaign_id}' ---")
-
-        if self.add_character_button_ref.current:
-            self.add_character_button_ref.current.disabled = self.selected_campaign_id is None
-            print(f"--- CharactersView: Create button disabled = {self.add_character_button_ref.current.disabled} ---")
-
+        self.add_character_button.disabled = self.selected_campaign_id is None
         await self._get_characters()
         self.update()
 
@@ -135,7 +122,7 @@ class CharactersView(ft.View):
             self.update()
             return
 
-        current_character_type = list(self.character_type_filter_ref.current.selected)[0]
+        current_character_type = list(self.character_type_filter.selected)[0]
 
         try:
             response = await supabase.client.from_('characters').select("*") \
@@ -156,7 +143,7 @@ class CharactersView(ft.View):
                             ),
                             trailing=ft.PopupMenuButton(items=[
                                 ft.PopupMenuItem(text="Edit",
-                                                 on_click=lambda e, char=character: self.open_edit_character_dialog(e,
+                                                 on_click=lambda e, char=character: self.open_edit_character_form(e,
                                                                                                                     char)),
                                 ft.PopupMenuItem(text="Delete", icon=ft.Icons.DELETE,
                                                  on_click=lambda e, char_id=character['id']: self.delete_character(e,
@@ -179,20 +166,16 @@ class CharactersView(ft.View):
 
         self.update()
 
-    def open_new_character_dialog(self, e):
+    def open_new_character_form(self, e):
         """Navigates to the form to create a new character."""
-        print("--- Navigating to new character form ---")
         if self.selected_campaign_id:
-            # CORRECTED: This now builds the correct route for a new character form
-            self.page.go(f"/characters/{self.selected_campaign_id}/character_edit")
+            self.page.go(f"/character_edit/new/{self.selected_campaign_id}")
 
-    def open_edit_character_dialog(self, e, character_data):
+    def open_edit_character_form(self, e, character_data):
         """Navigates to the form to edit an existing character."""
-        # CORRECTED: This now navigates to the edit view instead of opening a dialog.
         character_id = character_data.get('id')
         if character_id:
-            print(f"--- Navigating to edit character form for ID: {character_id} ---")
-            self.page.go(f"/characters/edit/{character_id}")
+            self.page.go(f"/character_edit/{character_id}")
 
     def delete_character(self, e, character_id):
         """Shows a confirmation dialog before deleting."""

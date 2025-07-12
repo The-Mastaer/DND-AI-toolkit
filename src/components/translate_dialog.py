@@ -13,7 +13,15 @@ class TranslateDialog(ft.AlertDialog):
     A dialog for translating world lore from one language to another using the Gemini API.
     """
 
-    def __init__(self, page: ft.Page, on_save_callback):
+    def __init__(self, page: ft.Page, gemini_service: GeminiService, on_save_callback):
+        """
+        Initializes the TranslateDialog.
+
+        Args:
+            page (ft.Page): The Flet page object.
+            gemini_service (GeminiService): The singleton instance of the Gemini service.
+            on_save_callback (function): Callback to execute after saving.
+        """
         super().__init__()
         self.page = page
         self.on_save_callback = on_save_callback
@@ -21,7 +29,8 @@ class TranslateDialog(ft.AlertDialog):
         self.title = ft.Text("Translate World Lore")
         self.world_data = None
         self.source_lang_code = None
-        self.gemini_service = GeminiService()
+        # REFACTOR: Use the injected GeminiService instance
+        self.gemini_service = gemini_service
 
         # --- UI Controls ---
         self.source_language_text = ft.Text()
@@ -54,13 +63,7 @@ class TranslateDialog(ft.AlertDialog):
         self.actions_alignment = ft.MainAxisAlignment.END
 
     def open_dialog(self, world_data, source_lang_code):
-        """
-        Sets up the dialog with the specific world's data and prepares its content.
-        Note: This method no longer sets self.open = True or calls page.update().
-        The parent view (WorldsView) is now responsible for setting self.open = True
-        and calling page.open(self).
-        """
-        print("TranslateDialog.open_dialog: Method called (preparing content).")
+        """Prepares the dialog's content for display."""
         self.world_data = world_data
         self.source_lang_code = source_lang_code
         self.actions[1].disabled = True
@@ -77,17 +80,18 @@ class TranslateDialog(ft.AlertDialog):
         ]
         if self.target_language_dropdown.options:
             self.target_language_dropdown.value = self.target_language_dropdown.options[0].key
-        print("TranslateDialog.open_dialog: Dialog content prepared.")
 
+        # The calling view is responsible for opening the dialog
+        self.page.dialog = self
+        self.open = True
+        self.page.update()
 
     def generate_translation_click(self, e):
         """Wrapper to call the async generation method."""
         self.page.run_task(self.generate_translation)
 
     async def generate_translation(self):
-        """
-        Calls the Gemini API to generate the translation.
-        """
+        """Calls the Gemini API to generate the translation."""
         self.progress_ring.visible = True
         self.translate_button.disabled = True
         self.update()
@@ -103,10 +107,7 @@ class TranslateDialog(ft.AlertDialog):
             return
 
         try:
-            prompt = TRANSLATE_LORE_PROMPT.format(
-                language=target_lang_name,
-                text=source_lore
-            )
+            prompt = TRANSLATE_LORE_PROMPT.format(language=target_lang_name, text=source_lore)
             translated_text = await self.gemini_service.get_text_response(prompt)
             self.translated_lore_field.value = translated_text
             self.translated_lore_field.read_only = False
@@ -127,9 +128,7 @@ class TranslateDialog(ft.AlertDialog):
         self.page.run_task(self.save_translation)
 
     async def save_translation(self):
-        """
-        Saves the new translation to the world's lore in the database.
-        """
+        """Saves the new translation to the world's lore in the database."""
         target_lang_code = self.target_language_dropdown.value
         translated_text = self.translated_lore_field.value
 
@@ -148,10 +147,9 @@ class TranslateDialog(ft.AlertDialog):
             self.page.snack_bar.open = True
 
             if self.on_save_callback:
-                self.on_save_callback()
+                await self.on_save_callback()
 
-            # Using page.close() to explicitly close the dialog
-            self.page.close(self)
+            self.close_dialog(None)
 
         except Exception as ex:
             self.show_error(f"Database Error: {ex}")
@@ -163,8 +161,6 @@ class TranslateDialog(ft.AlertDialog):
 
     def close_dialog(self, e):
         """Closes the dialog and resets its state."""
-        # Using page.close() to explicitly close the dialog
-        self.page.close(self)
-        self.title = ft.Text("Translate World Lore")
-        self.open = False # Reset open state for next time if it's reused without full re-instantiation.
-        self.page.update() # Update the page to reflect the closed state (this might be redundant with page.close())
+        self.open = False
+        self.page.dialog = None
+        self.page.update()

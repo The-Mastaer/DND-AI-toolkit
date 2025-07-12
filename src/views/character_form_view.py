@@ -6,8 +6,10 @@ from ..services.gemini_service import GeminiService
 from ..prompts import GENERATE_NPC_PROMPT
 from ..config import (
     DND_RACES, DND_CLASSES, DND_BACKGROUNDS,
-    DND_ENVIRONMENTS, DND_HOSTILITIES, DND_RARITIES
+    DND_ENVIRONMENTS, DND_HOSTILITIES, DND_RARITIES,
+    DEFAULT_TEXT_MODEL
 )
+from ..components.ui_components import create_compact_textfield, create_compact_dropdown
 import json
 import asyncio
 import random
@@ -19,13 +21,22 @@ class CharacterFormView(ft.View):
     and integrated AI generation.
     """
 
-    def __init__(self, page: ft.Page, character_id=None, campaign_id=None):
+    def __init__(self, page: ft.Page, gemini_service: GeminiService, character_id=None, campaign_id=None):
+        """
+        Initializes the CharacterFormView.
+
+        Args:
+            page (ft.Page): The Flet page object.
+            gemini_service (GeminiService): The singleton instance of the Gemini service.
+            character_id (int, optional): The ID of the character to edit. Defaults to None.
+            campaign_id (int, optional): The ID of the campaign for a new character. Defaults to None.
+        """
         super().__init__()
         self.page = page
         self.character_id = character_id
         self.campaign_id = campaign_id
         self.is_edit_mode = character_id is not None
-        self.gemini_service = GeminiService()
+        self.gemini_service = gemini_service
 
         # --- View Configuration ---
         self.route = f"/characters/edit/{self.character_id}" if self.is_edit_mode else f"/characters/new/{self.campaign_id}"
@@ -35,20 +46,7 @@ class CharacterFormView(ft.View):
             actions=[ft.IconButton(icon=ft.Icons.SAVE, on_click=self.save_character_click, tooltip="Save Character")],
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
         )
-
-        # --- Helper for compact controls ---
-        def create_compact_textfield(label, multiline=False, min_lines=1):
-            return ft.TextField(
-                label=label, multiline=multiline, min_lines=min_lines,
-                text_size=12, dense=True
-            )
-
-        def create_compact_dropdown(label, options):
-            return ft.Dropdown(
-                label=label,
-                options=[ft.dropdown.Option("Random")] + [ft.dropdown.Option(opt) for opt in options],
-                value="Random", text_size=12, dense=True, expand=True
-            )
+        self.scroll = ft.ScrollMode.ADAPTIVE
 
         # --- Left Column: Main Character Details ---
         self.name_field = create_compact_textfield("Name")
@@ -58,53 +56,54 @@ class CharacterFormView(ft.View):
         self.plot_hooks_field = create_compact_textfield("Plot Hooks", multiline=True, min_lines=3)
         self.roleplaying_tips_field = create_compact_textfield("Roleplaying Tips", multiline=True, min_lines=3)
 
-        left_column = ft.Column(
-            controls=[
-                self.name_field,
-                self.appearance_field,
-                self.personality_field,
-                self.backstory_field,
-                self.plot_hooks_field,
-                self.roleplaying_tips_field,
-            ],
-            spacing=10,
-            expand=True
-        )
-
         # --- Right Column: AI Generation & Portrait ---
-        self.race_dropdown = create_compact_dropdown("Race", DND_RACES)
-        self.class_dropdown = create_compact_dropdown("Class", DND_CLASSES)
-        self.environment_dropdown = create_compact_dropdown("Environment", DND_ENVIRONMENTS)
-        self.hostility_dropdown = create_compact_dropdown("Hostility", DND_HOSTILITIES)
-        self.rarity_dropdown = create_compact_dropdown("Rarity", DND_RARITIES)
-        self.background_dropdown = create_compact_dropdown("Background", DND_BACKGROUNDS)
+        self.race_dropdown = create_compact_dropdown("Race", DND_RACES, expand=True)
+        self.class_dropdown = create_compact_dropdown("Class", DND_CLASSES, expand=True)
+        self.environment_dropdown = create_compact_dropdown("Environment", DND_ENVIRONMENTS, expand=True)
+        self.hostility_dropdown = create_compact_dropdown("Hostility", DND_HOSTILITIES, expand=True)
+        self.rarity_dropdown = create_compact_dropdown("Rarity", DND_RARITIES, expand=True)
+        self.background_dropdown = create_compact_dropdown("Background", DND_BACKGROUNDS, expand=True)
         self.custom_prompt_field = create_compact_textfield("Custom Prompt / Instructions", multiline=True, min_lines=3)
         self.generate_npc_button = ft.FilledButton("Generate with AI", on_click=self.generate_npc_click)
         self.generation_progress_ring = ft.ProgressRing(width=20, height=20, stroke_width=2, visible=False)
 
-        right_column = ft.Column(
-            controls=[
-                ft.Text("AI Generation Parameters", style=ft.TextThemeStyle.TITLE_MEDIUM, size=14),
-                ft.Row([self.race_dropdown, self.class_dropdown]),
-                ft.Row([self.environment_dropdown, self.hostility_dropdown]),
-                ft.Row([self.rarity_dropdown, self.background_dropdown]),
-                self.custom_prompt_field,
-                ft.Row([self.generate_npc_button, self.generation_progress_ring]),
-                ft.Divider(),
-                ft.Text("Portrait (Coming Soon)", style=ft.TextThemeStyle.TITLE_MEDIUM, size=14),
-                ft.Container(height=200, border=ft.border.all(1, ft.Colors.OUTLINE), border_radius=5,
-                             content=ft.Icon(ft.Icons.PORTRAIT, size=64), alignment=ft.alignment.center)
-            ],
-            spacing=10,
-            expand=True
-        )
-
         # --- Final View Layout ---
+        # DEBUG FIX: Encapsulated each major section in a Column with expand=True
+        # inside the main Row to ensure proper two-column layout.
         self.controls = [
             ft.Row(
-                controls=[left_column, right_column],
+                controls=[
+                    ft.Column(
+                        controls=[
+                            self.name_field,
+                            self.appearance_field,
+                            self.personality_field,
+                            self.backstory_field,
+                            self.plot_hooks_field,
+                            self.roleplaying_tips_field,
+                        ],
+                        spacing=10,
+                        expand=1  # Takes up 1 part of the space
+                    ),
+                    ft.Column(
+                        controls=[
+                            ft.Text("AI Generation Parameters", style=ft.TextThemeStyle.TITLE_MEDIUM, size=14),
+                            ft.Row([self.race_dropdown, self.class_dropdown]),
+                            ft.Row([self.environment_dropdown, self.hostility_dropdown]),
+                            ft.Row([self.rarity_dropdown, self.background_dropdown]),
+                            self.custom_prompt_field,
+                            ft.Row([self.generate_npc_button, self.generation_progress_ring]),
+                            ft.Divider(),
+                            ft.Text("Portrait (Coming Soon)", style=ft.TextThemeStyle.TITLE_MEDIUM, size=14),
+                            ft.Container(height=200, border=ft.border.all(1, ft.Colors.OUTLINE), border_radius=5,
+                                         content=ft.Icon(ft.Icons.PORTRAIT, size=64), alignment=ft.alignment.center)
+                        ],
+                        spacing=10,
+                        expand=1  # Takes up 1 part of the space
+                    )
+                ],
                 spacing=20,
-                expand=True
+                vertical_alignment=ft.CrossAxisAlignment.START
             )
         ]
 
@@ -175,12 +174,11 @@ class CharacterFormView(ft.View):
                                                                                             self.character_id).execute()
                 message = "Character updated!"
             else:
-                active_campaign_id = await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id")
-                if not active_campaign_id:
-                    raise Exception("No active campaign selected. Please set one in Settings.")
+                if not self.campaign_id:
+                    raise Exception("Campaign ID is missing for new character.")
 
-                character_data_to_save["campaign_id"] = active_campaign_id
-                print(f"--- Creating new character for campaign ID: {active_campaign_id} ---")
+                character_data_to_save["campaign_id"] = self.campaign_id
+                print(f"--- Creating new character for campaign ID: {self.campaign_id} ---")
                 await supabase.client.from_('characters').insert(character_data_to_save).execute()
                 message = "Character created!"
 
@@ -204,12 +202,12 @@ class CharacterFormView(ft.View):
         self.generate_npc_button.disabled = True
         self.page.update()
 
-        # Helper function to get a random choice if "Random" is selected
         def get_choice(dropdown, choices):
             return random.choice(choices) if dropdown.value == "Random" else dropdown.value
 
         try:
-            # Resolve "Random" selections before sending to AI
+            model_name = await asyncio.to_thread(self.page.client_storage.get, "ai.model") or DEFAULT_TEXT_MODEL
+
             prompt_params = {
                 "race": get_choice(self.race_dropdown, DND_RACES),
                 "char_class": get_choice(self.class_dropdown, DND_CLASSES),
@@ -223,13 +221,14 @@ class CharacterFormView(ft.View):
             print(f"--- Sending prompt to Gemini with params: {prompt_params} ---")
             prompt = GENERATE_NPC_PROMPT.format(**prompt_params)
 
-            response_text = await self.gemini_service.get_text_response(prompt)
+            response_text = await self.gemini_service.get_text_response(prompt, model_name=model_name)
             print(f"--- Received response from Gemini: {response_text[:100]}... ---")
 
-            npc_data = json.loads(response_text)
+            # Clean the response text before parsing
+            clean_response = response_text.strip().replace("```json", "").replace("```", "")
+            npc_data = json.loads(clean_response)
             print("--- Successfully parsed JSON response. ---")
 
-            # Populate the form fields with the parsed data
             self.name_field.value = npc_data.get("name", "")
             self.appearance_field.value = npc_data.get("appearance", "")
             self.personality_field.value = npc_data.get("personality", "")

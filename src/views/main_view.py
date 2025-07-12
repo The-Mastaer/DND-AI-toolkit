@@ -6,6 +6,8 @@ import asyncio
 from ..services.supabase_service import supabase
 from ..services.gemini_service import GeminiService
 from ..prompts import SRD_QUERY_PROMPT
+# DEBUG FIX: Corrected the import to use the variables from config.py
+from ..config import TEXT_MODELS, DEFAULT_TEXT_MODEL
 
 
 class MainView(ft.View):
@@ -15,21 +17,22 @@ class MainView(ft.View):
     which now features the core AI chatbot interface. This view corresponds to the root route '/'.
     """
 
-    def __init__(self, page: ft.Page):
+    def __init__(self, page: ft.Page, gemini_service: GeminiService):
         """
         Initializes the MainView.
 
         Args:
             page (ft.Page): The Flet page object for the application.
+            gemini_service (GeminiService): The singleton instance of the Gemini service.
         """
         super().__init__()
         self.page = page
         self.route = "/"
-        self.gemini_service = GeminiService()
+        self.gemini_service = gemini_service
 
         # --- State Management ---
         self.lore_chat_session = None
-        self.gemini_srd_file = None # Stores the actual Gemini File object (types.File)
+        self.gemini_srd_file = None  # Stores the actual Gemini File object
 
         # --- Navigation Rail ---
         self.navigation_rail = ft.NavigationRail(
@@ -50,9 +53,9 @@ class MainView(ft.View):
                     label="Worlds",
                 ),
                 ft.NavigationRailDestination(
-                    icon=ft.Icons.PEOPLE_OUTLINE, # Corrected Icon
-                    selected_icon=ft.Icons.PEOPLE, # Corrected Selected Icon
-                    label="Characters", # Corrected Label
+                    icon=ft.Icons.PEOPLE_OUTLINE,
+                    selected_icon=ft.Icons.PEOPLE,
+                    label="Characters",
                 ),
                 ft.NavigationRailDestination(
                     icon=ft.Icons.SETTINGS_OUTLINED,
@@ -166,7 +169,7 @@ class MainView(ft.View):
         self.lore_chat_history.controls.append(ft.Text("Loading campaign context...", italic=True))
         self.update()
 
-        keys_to_fetch = ["active_language_code", "active_world_id", "active_campaign_id", "prompt.lore_master"]
+        keys_to_fetch = ["active_language_code", "active_world_id", "active_campaign_id", "ai.model"]
         tasks = [asyncio.to_thread(self.page.client_storage.get, key) for key in keys_to_fetch]
         results = await asyncio.gather(*tasks)
         settings = dict(zip(keys_to_fetch, results))
@@ -174,6 +177,7 @@ class MainView(ft.View):
         lang_code = settings.get("active_language_code") or "en"
         world_id = settings.get("active_world_id")
         campaign_id = settings.get("active_campaign_id")
+        model_name = settings.get("ai.model") or DEFAULT_TEXT_MODEL
 
         if not world_id or not campaign_id:
             self.lore_chat_history.controls.clear()
@@ -199,7 +203,10 @@ class MainView(ft.View):
             Party: {campaign_data.get('party_info', {}).get(lang_code, "N/A")}
             History: {campaign_data.get('session_history', {}).get(lang_code, "N/A")}
             """
-            self.lore_chat_session = self.gemini_service.start_chat_session(initial_context=context)
+            self.lore_chat_session = self.gemini_service.start_chat_session(
+                initial_context=context,
+                model_name=model_name
+            )
             self.lore_chat_history.controls.clear()
             self.lore_chat_history.controls.append(
                 ft.Text("Context loaded. Ask about your campaign!", color=ft.Colors.GREEN_700))
@@ -214,7 +221,6 @@ class MainView(ft.View):
         self.rules_chat_history.controls.append(ft.Text("Loading SRD document...", italic=True))
         self.update()
 
-        # Try to retrieve Gemini File URI from client storage
         gemini_srd_file_name = await asyncio.to_thread(self.page.client_storage.get, "gemini_srd_file_name")
 
         if gemini_srd_file_name:
@@ -225,7 +231,6 @@ class MainView(ft.View):
             self.rules_chat_history.controls.clear()
             self.rules_chat_history.controls.append(ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN_700))
         else:
-            # If not found in Gemini or retrieval failed, proceed with Supabase download and Gemini upload
             srd_bucket_path = await asyncio.to_thread(self.page.client_storage.get, "srd_document_bucket_path")
             if not srd_bucket_path:
                 self.rules_chat_history.controls.clear()
@@ -238,9 +243,8 @@ class MainView(ft.View):
             uploaded_file_name = await self.gemini_service.upload_srd_to_gemini(srd_bucket_path)
 
             if uploaded_file_name:
-                # Store the Gemini File URI for future sessions
                 await asyncio.to_thread(self.page.client_storage.set, "gemini_srd_file_name", uploaded_file_name)
-                self.gemini_srd_file = await self.gemini_service.get_gemini_file_by_name(uploaded_file_name) # Get the actual File object
+                self.gemini_srd_file = await self.gemini_service.get_gemini_file_by_name(uploaded_file_name)
 
                 if self.gemini_srd_file:
                     self.rules_chat_history.controls.clear()
@@ -254,7 +258,6 @@ class MainView(ft.View):
                 self.rules_chat_history.controls.append(ft.Text("Failed to upload SRD document to Gemini.", color=ft.Colors.RED))
         self.update()
 
-
     async def send_message_click(self, e):
         """Handles the sending of a message from the user input field."""
         user_text = self.user_input.value
@@ -265,33 +268,33 @@ class MainView(ft.View):
         self.chat_progress.visible = True
         self.update()
 
-        # Add user message to chat history, with expand=True for wrapping
         self.active_chat_history.controls.append(
             ft.Row([ft.Icon(ft.Icons.PERSON), ft.Text(user_text, selectable=True, expand=True)])
         )
         self.update()
 
         try:
+            model_name = await asyncio.to_thread(self.page.client_storage.get, "ai.model") or DEFAULT_TEXT_MODEL
             selected_tab = self.main_content.selected_index
             response_text = ""
-            if selected_tab == 0:
+            if selected_tab == 0: # Lore Master
                 if self.lore_chat_session:
-                    # Run the synchronous send_message in a separate thread
                     response = await asyncio.to_thread(self.lore_chat_session.send_message, user_text)
                     response_text = response.text
                 else:
                     response_text = "Error: Lore Master session not initialized."
-            else:
+            else: # Rules Lawyer
                 if self.gemini_srd_file:
-                    srd_prompt = await asyncio.to_thread(self.page.client_storage.get,
-                                                         "prompt.rules_lawyer") or SRD_QUERY_PROMPT
-                    response_text = await self.gemini_service.query_srd_file(question=user_text,
-                                                                             srd_file=self.gemini_srd_file,
-                                                                             system_prompt=srd_prompt)
+                    srd_prompt = await asyncio.to_thread(self.page.client_storage.get, "prompt.rules_lawyer") or SRD_QUERY_PROMPT
+                    response_text = await self.gemini_service.query_srd_file(
+                        question=user_text,
+                        srd_file=self.gemini_srd_file,
+                        system_prompt=srd_prompt,
+                        model_name=model_name
+                    )
                 else:
                     response_text = "Error: SRD document not ready."
 
-            # Add AI response to chat history, with expand=True for wrapping
             self.active_chat_history.controls.append(
                 ft.Row([ft.Icon(ft.Icons.SMART_TOY),
                         ft.Markdown(response_text, selectable=True, extension_set=ft.MarkdownExtensionSet.GITHUB_WEB, expand=True)])
