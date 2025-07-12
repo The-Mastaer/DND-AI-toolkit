@@ -4,16 +4,16 @@ import flet as ft
 import asyncio
 import json
 
-from src.views.main_view import MainView
-from src.views.worlds_view import WorldsView
-from src.views.settings_view import SettingsView
-from src.views.login_view import LoginView
-from src.views.campaigns_view import CampaignsView
-from src.views.characters_view import CharactersView
-from src.views.character_form_view import CharacterFormView
+from views.main_view import MainView
+from views.worlds_view import WorldsView
+from views.settings_view import SettingsView
+from views.login_view import LoginView
+from views.campaigns_view import CampaignsView
+from views.characters_view import CharactersView
+from views.character_form_view import CharacterFormView
 # Import the singleton service instances
-from src.services.supabase_service import supabase
-from src.services.gemini_service import gemini_service
+from services.supabase_service import supabase
+from services.gemini_service import gemini_service
 
 
 async def main(page: ft.Page):

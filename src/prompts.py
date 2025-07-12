@@ -56,7 +56,7 @@ Return the output as a single, clean JSON object. Do not include any text, notes
 **JSON Schema to use for the response:**
 {{
     "name": "string (A fantasy name appropriate for the given race)",
-    "appearance": "string (A detailed physical description of the character, 2-3 sentences)",
+    "appearance": "string (A detailed physical description of the character, 3-5 sentences)",
     "personality": "string (Describe their traits, demeanor, and motivations, 2-3 sentences)",
     "backstory": "string (A brief history of the character, 2-3 sentences)",
     "plot_hooks": "string (A bulleted list of 2-3 specific, actionable plot hooks for a DM, using '*' for bullets)",

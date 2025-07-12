@@ -2,7 +2,7 @@
 
 import os
 from supabase import create_client, Client, AClient, acreate_client
-from ..config import SUPABASE_URL, SUPABASE_KEY
+from config import SUPABASE_URL, SUPABASE_KEY
 from gotrue.types import User, Session
 import asyncio
 
@@ -48,8 +48,12 @@ class SupabaseService:
         """
         if self.client:
             response = await self.client.auth.get_user()
-            self.user = response.user
-            return self.user
+            # --- FIX: Check if the response and user exist ---
+            if response and response.user:
+                self.user = response.user
+                return self.user
+            # If anything fails or there's no user, return None
+        self.user = None
         return None
 
     async def get_all_worlds(self):

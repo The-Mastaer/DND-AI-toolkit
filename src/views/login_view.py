@@ -1,7 +1,7 @@
 # src/views/login_view.py
 
 import flet as ft
-from ..services.supabase_service import supabase
+from services.supabase_service import supabase
 import asyncio
 import json
 

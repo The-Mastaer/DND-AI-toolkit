@@ -1,6 +1,6 @@
 import flet as ft
-from ..services.supabase_service import supabase
-from ..config import SUPPORTED_LANGUAGES
+from services.supabase_service import supabase
+from config import SUPPORTED_LANGUAGES
 
 
 class EditWorldView(ft.View):

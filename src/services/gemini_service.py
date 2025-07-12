@@ -2,8 +2,8 @@
 
 from google import genai
 from google.genai import types
-from ..config import GEMINI_API_KEY
-from ..services.supabase_service import supabase
+from config import GEMINI_API_KEY
+from services.supabase_service import supabase
 import tempfile
 import pathlib
 import asyncio

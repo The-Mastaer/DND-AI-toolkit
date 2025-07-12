@@ -2,10 +2,12 @@
 
 import flet as ft
 import traceback
-from ..config import SUPPORTED_LANGUAGES
-from ..services.gemini_service import GeminiService
-from ..prompts import TRANSLATE_LORE_PROMPT
-from ..services.supabase_service import supabase
+import asyncio
+from config import SUPPORTED_LANGUAGES, DEFAULT_TEXT_MODEL
+from services.gemini_service import GeminiService
+from prompts import TRANSLATE_LORE_PROMPT
+from services.supabase_service import supabase
+
 
 
 class TranslateDialog(ft.AlertDialog):
@@ -82,9 +84,9 @@ class TranslateDialog(ft.AlertDialog):
             self.target_language_dropdown.value = self.target_language_dropdown.options[0].key
 
         # The calling view is responsible for opening the dialog
-        self.page.dialog = self
         self.open = True
         self.page.update()
+        print("Dialog opened")
 
     def generate_translation_click(self, e):
         """Wrapper to call the async generation method."""
@@ -92,6 +94,7 @@ class TranslateDialog(ft.AlertDialog):
 
     async def generate_translation(self):
         """Calls the Gemini API to generate the translation."""
+        model_name = await asyncio.to_thread(self.page.client_storage.get, "ai.model") or DEFAULT_TEXT_MODEL
         self.progress_ring.visible = True
         self.translate_button.disabled = True
         self.update()
@@ -108,7 +111,7 @@ class TranslateDialog(ft.AlertDialog):
 
         try:
             prompt = TRANSLATE_LORE_PROMPT.format(language=target_lang_name, text=source_lore)
-            translated_text = await self.gemini_service.get_text_response(prompt)
+            translated_text = await self.gemini_service.get_text_response(prompt, model_name)
             self.translated_lore_field.value = translated_text
             self.translated_lore_field.read_only = False
             self.actions[1].disabled = False
@@ -162,5 +165,4 @@ class TranslateDialog(ft.AlertDialog):
     def close_dialog(self, e):
         """Closes the dialog and resets its state."""
         self.open = False
-        self.page.dialog = None
         self.page.update()

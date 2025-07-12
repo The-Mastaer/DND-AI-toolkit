@@ -1,10 +1,10 @@
 # src/views/worlds_view.py
 
 import flet as ft
-from ..services.supabase_service import supabase
-from ..services.gemini_service import GeminiService
-from ..config import SUPPORTED_LANGUAGES
-from ..components.translate_dialog import TranslateDialog
+from services.supabase_service import supabase
+from services.gemini_service import GeminiService
+from config import SUPPORTED_LANGUAGES
+from components.translate_dialog import TranslateDialog
 import asyncio
 
 
@@ -34,7 +34,7 @@ class WorldsView(ft.View):
 
         # --- Dialogs ---
         self.translate_dialog = TranslateDialog(self.page, self.gemini_service, self.refresh_view)
-
+        self.page.overlay.append(self.translate_dialog)
         # --- UI Controls ---
         self.appbar = ft.AppBar(
             title=ft.Text("World Manager"),
@@ -230,6 +230,7 @@ class WorldsView(ft.View):
         """Opens the translation dialog."""
         if self.selected_world_data:
             self.translate_dialog.open_dialog(self.selected_world_data, self.current_language_code)
+            print("Opening dialog")
 
     def manage_campaigns_click(self, e):
         """Navigates to the campaign management view for the selected world."""

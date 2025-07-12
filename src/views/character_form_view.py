@@ -1,15 +1,15 @@
 # src/views/character_form_view.py
 
 import flet as ft
-from ..services.supabase_service import supabase
-from ..services.gemini_service import GeminiService
-from ..prompts import GENERATE_NPC_PROMPT
-from ..config import (
+from services.supabase_service import supabase
+from services.gemini_service import GeminiService
+from prompts import GENERATE_NPC_PROMPT
+from config import (
     DND_RACES, DND_CLASSES, DND_BACKGROUNDS,
     DND_ENVIRONMENTS, DND_HOSTILITIES, DND_RARITIES,
     DEFAULT_TEXT_MODEL
 )
-from ..components.ui_components import create_compact_textfield, create_compact_dropdown
+from components.ui_components import create_compact_textfield, create_compact_dropdown
 import json
 import asyncio
 import random
@@ -134,6 +134,13 @@ class CharacterFormView(ft.View):
         self.backstory_field.value = data.get('backstory', {}).get(lang_code, '')
         self.plot_hooks_field.value = data.get('plot_hooks', {}).get(lang_code, '')
         self.roleplaying_tips_field.value = data.get('roleplaying_tips', {}).get(lang_code, '')
+        self.race_dropdown.value = data.get('race')
+        self.class_dropdown.value = data.get('class')
+        self.background_dropdown.value = data.get('background')
+        self.environment_dropdown.value = data.get('environment')
+        self.hostility_dropdown.value = data.get('hostility')
+        self.rarity_dropdown.value = data.get('rarity')
+        self.custom_prompt_field.value = data.get('custom_prompt', '')
 
     def save_character_click(self, e):
         """Wrapper to call the async save character method."""
@@ -163,6 +170,13 @@ class CharacterFormView(ft.View):
             "notes": {lang_code: ""},
             "attributes": {},
             "tags": [],
+            "race": self.race_dropdown.value,
+            "class": self.class_dropdown.value,
+            "background": self.background_dropdown.value,
+            "environment": self.environment_dropdown.value,
+            "hostility": self.hostility_dropdown.value,
+            "rarity": self.rarity_dropdown.value,
+            "custom_prompt": self.custom_prompt_field.value,
         }
 
         print(f"--- Data to save: {json.dumps(character_data_to_save, indent=2)} ---")
@@ -183,10 +197,13 @@ class CharacterFormView(ft.View):
                 message = "Character created!"
 
             self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.GREEN_700)
-            self.go_back(None)
+            self.page.snack_bar.open = True
+            self.page.update()
         except Exception as ex:
             print(f"--- Supabase Save Error: {ex} ---")
             self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Error saving: {ex}"), bgcolor=ft.Colors.RED_700)
+            self.page.snack_bar.open = True
+            self.page.update()
         finally:
             self.page.snack_bar.open = True
             self.page.update()
@@ -229,12 +246,21 @@ class CharacterFormView(ft.View):
             npc_data = json.loads(clean_response)
             print("--- Successfully parsed JSON response. ---")
 
+            # Populate the main text fields
             self.name_field.value = npc_data.get("name", "")
             self.appearance_field.value = npc_data.get("appearance", "")
             self.personality_field.value = npc_data.get("personality", "")
             self.backstory_field.value = npc_data.get("backstory", "")
             self.plot_hooks_field.value = npc_data.get("plot_hooks", "")
             self.roleplaying_tips_field.value = npc_data.get("roleplaying_tips", "")
+
+            # --- Update dropdowns with the generated values ---
+            self.race_dropdown.value = prompt_params["race"]
+            self.class_dropdown.value = prompt_params["char_class"]
+            self.background_dropdown.value = prompt_params["background"]
+            self.environment_dropdown.value = prompt_params["environment"]
+            self.hostility_dropdown.value = prompt_params["hostility"]
+            self.rarity_dropdown.value = prompt_params["rarity"]
 
             self.page.snack_bar = ft.SnackBar(ft.Text("NPC data generated!"), bgcolor=ft.Colors.GREEN_700)
 

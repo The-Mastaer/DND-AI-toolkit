@@ -3,11 +3,11 @@
 import flet as ft
 import asyncio
 
-from ..services.supabase_service import supabase
-from ..services.gemini_service import GeminiService
-from ..prompts import SRD_QUERY_PROMPT
+from services.supabase_service import supabase
+from services.gemini_service import GeminiService
+from prompts import SRD_QUERY_PROMPT
 # DEBUG FIX: Corrected the import to use the variables from config.py
-from ..config import TEXT_MODELS, DEFAULT_TEXT_MODEL
+from config import DEFAULT_TEXT_MODEL
 
 
 class MainView(ft.View):

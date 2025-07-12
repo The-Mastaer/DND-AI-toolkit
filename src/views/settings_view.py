@@ -1,10 +1,10 @@
 # src/views/settings_view.py
 
 import flet as ft
-from ..services.supabase_service import supabase
-from ..services.gemini_service import GeminiService
-from ..config import THEME_COLORS, TEXT_MODELS, DEFAULT_TEXT_MODEL
-from ..prompts import SRD_QUERY_PROMPT
+from services.supabase_service import supabase
+from services.gemini_service import GeminiService
+from config import THEME_COLORS, TEXT_MODELS, DEFAULT_TEXT_MODEL
+from prompts import SRD_QUERY_PROMPT
 import asyncio
 
 

@@ -1,11 +1,10 @@
 # src/views/campaigns_view.py
 
 import flet as ft
-from ..services.supabase_service import supabase
-from ..services.gemini_service import GeminiService
-from ..config import SUPPORTED_LANGUAGES
+from services.supabase_service import supabase
+from services.gemini_service import GeminiService
+
 import asyncio
-import json
 
 
 class CampaignsView(ft.View):
@@ -111,7 +110,7 @@ class CampaignsView(ft.View):
     async def get_campaigns(self):
         """Fetches campaigns for the active world and updates the UI."""
         self.campaigns_list.controls.clear()
-        self.campaigns_list.controls.append(ft.ProgressIndicator())
+        self.campaigns_list.controls.append(ft.ProgressBar())
         self.update()
 
         try:
@@ -206,7 +205,7 @@ class CampaignsView(ft.View):
             self.page.snack_bar = ft.SnackBar(ft.Text("Campaign saved!"), bgcolor=ft.Colors.GREEN)
             await self.get_campaigns()
         except Exception as ex:
-            self.page.snack_bar = ft.SnackBar(ft.Text(f"Error saving campaign: {ex}"), color=ft.Colors.RED)
+            self.page.snack_bar = ft.SnackBar(ft.Text(f"Error saving campaign: {ex}"), bgcolor=ft.Colors.RED)
         finally:
             self.page.snack_bar.open = True
             self.update()
@@ -224,7 +223,7 @@ class CampaignsView(ft.View):
                 await self.get_campaigns()
                 self.page.snack_bar = ft.SnackBar(ft.Text("Campaign deleted."), bgcolor=ft.Colors.GREEN)
             except Exception as ex:
-                self.page.snack_bar = ft.SnackBar(ft.Text(f"Error deleting campaign: {ex}"), color=ft.Colors.RED)
+                self.page.snack_bar = ft.SnackBar(ft.Text(f"Error deleting campaign: {ex}"), bgcolor=ft.Colors.RED)
             finally:
                 self.page.snack_bar.open = True
                 self.update()

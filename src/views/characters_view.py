@@ -1,8 +1,8 @@
 # src/views/characters_view.py
 
 import flet as ft
-from ..services.supabase_service import supabase
-from ..services.gemini_service import GeminiService
+from services.supabase_service import supabase
+from services.gemini_service import GeminiService
 import asyncio
 
 
@@ -147,7 +147,7 @@ class CharactersView(ft.View):
                                                                                                                     char)),
                                 ft.PopupMenuItem(text="Delete", icon=ft.Icons.DELETE,
                                                  on_click=lambda e, char_id=character['id']: self.delete_character(e,
-                                                                                                                   char_id)),
+                                                                                                                   char)),
                             ]),
                         )
                     )

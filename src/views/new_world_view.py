@@ -1,7 +1,7 @@
 import flet as ft
 # Restoring the Supabase import
-from ..services.supabase_service import supabase
-from ..config import SUPPORTED_LANGUAGES
+from services.supabase_service import supabase
+from config import SUPPORTED_LANGUAGES
 
 
 class NewWorldView(ft.View):

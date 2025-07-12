@@ -1,9 +1,9 @@
 # src/components/character_form_dialog.py
 
 import flet as ft
-from ..services.supabase_service import supabase
-from ..services.gemini_service import GeminiService
-from ..prompts import GENERATE_NPC_PROMPT # Assuming a new prompt will be added here
+from services.supabase_service import supabase
+from services.gemini_service import GeminiService
+from prompts import GENERATE_NPC_PROMPT # Assuming a new prompt will be added here
 import json
 
 class CharacterFormDialog(ft.AlertDialog):
