@@ -147,7 +147,7 @@ class CharactersView(ft.View):
                                                                                                                     char)),
                                 ft.PopupMenuItem(text="Delete", icon=ft.Icons.DELETE,
                                                  on_click=lambda e, char_id=character['id']: self.delete_character(e,
-                                                                                                                   char)),
+                                                                                                                   char_id)),
                             ]),
                         )
                     )
