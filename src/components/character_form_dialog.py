@@ -217,14 +217,12 @@ class CharacterFormDialog(ft.AlertDialog):
             except json.JSONDecodeError:
                 # If not JSON, just put the whole response into appearance for now.
                 self.appearance_field.value = generated_text
-                self.page.snack_bar = ft.SnackBar(content=ft.Text("AI generated text. Consider refining it manually."), bgcolor=ft.Colors.AMBER_700)
-                self.page.snack_bar.open = True
-
+                self.page.open(ft.SnackBar(content=ft.Text("AI generated text. Consider refining it manually."), bgcolor=ft.Colors.AMBER_700))
+                self.page.update()
 
         except Exception as ex:
             print(f"Error generating NPC: {ex}")
-            self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Error generating NPC: {ex}"), bgcolor=ft.Colors.RED_700)
-            self.page.snack_bar.open = True
+            self.page.open(ft.SnackBar(content=ft.Text(f"Error generating NPC: {ex}"), bgcolor=ft.Colors.RED_700))
         finally:
             self.generation_progress_ring.visible = False
             self.generate_npc_button.disabled = False
@@ -247,8 +245,7 @@ class CharacterFormDialog(ft.AlertDialog):
 
         appearance_description = self.appearance_field.value
         if not appearance_description:
-            self.page.snack_bar = ft.SnackBar(content=ft.Text("Please provide an appearance description first."), bgcolor=ft.Colors.AMBER_700)
-            self.page.snack_bar.open = True
+            self.page.open(ft.SnackBar(content=ft.Text("Please provide an appearance description first."), bgcolor=ft.Colors.AMBER_700))
             self.generation_progress_ring.visible = False
             self.generate_npc_button.disabled = False
             self.generate_portrait_button.disabled = False
@@ -262,16 +259,13 @@ class CharacterFormDialog(ft.AlertDialog):
             if portrait_url:
                 self.portrait_image.src = portrait_url
                 self.portrait_image.visible = True
-                self.page.snack_bar = ft.SnackBar(content=ft.Text("Portrait generated successfully!"), bgcolor=ft.Colors.GREEN_700)
-                self.page.snack_bar.open = True
+                self.page.open(ft.SnackBar(content=ft.Text("Portrait generated successfully!"), bgcolor=ft.Colors.GREEN_700))
             else:
-                self.page.snack_bar = ft.SnackBar(content=ft.Text("Failed to generate portrait."), bgcolor=ft.Colors.RED_700)
-                self.page.snack_bar.open = True
+                self.page.open(ft.SnackBar(content=ft.Text("Failed to generate portrait."), bgcolor=ft.Colors.RED_700))
 
         except Exception as ex:
             print(f"Error generating portrait: {ex}")
-            self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Error generating portrait: {ex}"), bgcolor=ft.Colors.RED_700)
-            self.page.snack_bar.open = True
+            self.page.open(ft.SnackBar(content=ft.Text(f"Error generating portrait: {ex}"), bgcolor=ft.Colors.RED_700))
         finally:
             self.generation_progress_ring.visible = False
             self.generate_npc_button.disabled = False
@@ -305,8 +299,7 @@ class CharacterFormDialog(ft.AlertDialog):
             try:
                 attributes = json.loads(self.attributes_field.value)
             except json.JSONDecodeError:
-                self.page.snack_bar = ft.SnackBar(content=ft.Text("Invalid JSON for Attributes!"), bgcolor=ft.Colors.RED_700)
-                self.page.snack_bar.open = True
+                self.page.open(ft.SnackBar(content=ft.Text("Invalid JSON for Attributes!"), bgcolor=ft.Colors.RED_700))
                 self.page.update()
                 return
 
@@ -315,8 +308,7 @@ class CharacterFormDialog(ft.AlertDialog):
 
         # Basic validation
         if not name:
-            self.page.snack_bar = ft.SnackBar(content=ft.Text("Character Name is required!"), bgcolor=ft.Colors.RED_700)
-            self.page.snack_bar.open = True
+            self.page.open(ft.SnackBar(content=ft.Text("Character Name is required!"), bgcolor=ft.Colors.RED_700))
             self.page.update()
             return
 
@@ -346,19 +338,17 @@ class CharacterFormDialog(ft.AlertDialog):
                 message = "Character created successfully!"
 
             if response.data:
-                self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.GREEN_700)
-                self.page.snack_bar.open = True
-                self.page.update()
+                self.page.open(ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.GREEN_700))
                 self.close_dialog(None) # Close dialog on success
                 if self.on_save_callback:
                     self.on_save_callback() # Refresh character list in parent view
+                self.page.update()
             else:
                 raise Exception(f"No data returned from Supabase: {response.status_code}")
 
         except Exception as ex:
             print(f"Error saving character: {ex}")
-            self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Error saving character: {ex}"), bgcolor=ft.Colors.RED_700)
-            self.page.snack_bar.open = True
+            self.page.open(ft.SnackBar(content=ft.Text(f"Error saving character: {ex}"), bgcolor=ft.Colors.RED_700))
             self.page.update()
 
 

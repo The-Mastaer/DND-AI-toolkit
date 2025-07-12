@@ -11,7 +11,6 @@ class CharactersView(ft.View):
     A view that displays a list of characters and handles navigation
     to the character creation/editing form.
     """
-    # DEBUG FIX: Corrected __init__ to accept gemini_service
     def __init__(self, page: ft.Page, gemini_service: GeminiService):
         """
         Initializes the CharactersView.
@@ -86,26 +85,29 @@ class CharactersView(ft.View):
 
     def did_mount(self):
         """Called when the control is added to the page to fetch initial data."""
+        # Correctly starts an async task from a sync method.
         self.page.run_task(self.load_initial_data)
 
     async def load_initial_data(self):
         """Asynchronously loads the active campaign ID and then fetches the characters."""
         self.selected_campaign_id = await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id")
         self.add_character_button.disabled = self.selected_campaign_id is None
+        # Call the async method to fetch characters
         await self._get_characters()
-        self.update()
+        # Use async update
+        self.page.update()
 
     def _on_character_type_change(self, e):
         """Handles the change in character type filter and re-fetches characters."""
         self.page.run_task(self._get_characters)
 
     async def _get_characters(self):
-        """Asynchronously fetches characters from Supabase."""
+        """Asynchronously fetches characters from Supabase and updates the view."""
         self.characters_list.controls.clear()
         self.characters_list.controls.append(
             ft.Row([self.progress_ring, ft.Text("Loading...")], alignment=ft.MainAxisAlignment.CENTER)
         )
-        self.update()
+        self.page.update()
 
         if not self.selected_campaign_id:
             self.characters_list.controls.clear()
@@ -119,7 +121,7 @@ class CharactersView(ft.View):
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10, expand=True,
                     alignment=ft.MainAxisAlignment.CENTER)
             )
-            self.update()
+            self.page.update()
             return
 
         current_character_type = list(self.character_type_filter.selected)[0]
@@ -142,12 +144,20 @@ class CharactersView(ft.View):
                                 content=ft.Icon(ft.Icons.PERSON)
                             ),
                             trailing=ft.PopupMenuButton(items=[
-                                ft.PopupMenuItem(text="Edit",
-                                                 on_click=lambda e, char=character: self.open_edit_character_form(e,
-                                                                                                                    char)),
-                                ft.PopupMenuItem(text="Delete", icon=ft.Icons.DELETE,
-                                                 on_click=lambda e, char_id=character['id']: self.delete_character(e,
-                                                                                                                   char_id)),
+                                # --- FIX APPLIED ---
+                                # Use control.data to pass the character ID instead of a lambda.
+                                # This is the idiomatic Flet way and works correctly with async handlers.
+                                ft.PopupMenuItem(
+                                    text="Edit",
+                                    data=character, # Store the whole character dict
+                                    on_click=self.open_edit_character_form
+                                ),
+                                ft.PopupMenuItem(
+                                    text="Delete",
+                                    icon=ft.Icons.DELETE,
+                                    data=character['id'], # Store just the ID
+                                    on_click=self.delete_character
+                                ),
                             ]),
                         )
                     )
@@ -164,52 +174,70 @@ class CharactersView(ft.View):
             self.characters_list.controls.clear()
             self.characters_list.controls.append(ft.Text(f"Error loading characters: {e}", color=ft.Colors.RED))
 
-        self.update()
+        self.page.update()
 
     def open_new_character_form(self, e):
         """Navigates to the form to create a new character."""
         if self.selected_campaign_id:
             self.page.go(f"/character_edit/new/{self.selected_campaign_id}")
 
-    def open_edit_character_form(self, e, character_data):
+    # --- FIX APPLIED ---
+    # The method now gets data from e.control.data
+    def open_edit_character_form(self, e):
         """Navigates to the form to edit an existing character."""
+        character_data = e.control.data
         character_id = character_data.get('id')
         if character_id:
             self.page.go(f"/character_edit/{character_id}")
 
-    def delete_character(self, e, character_id):
-        """Shows a confirmation dialog before deleting."""
-
-        def close_dialog(e):
-            confirm_dialog.open = False
-            self.page.update()
-
-        async def confirm_action(e):
-            close_dialog(e)
-            await self._delete_character_async(character_id)
+    # --- FIX APPLIED ---
+    # The method is async and gets the character_id from the event control's data attribute.
+    async def delete_character(self, e):
+        """Displays a confirmation dialog and deletes the character if confirmed."""
+        character_id = e.control.data
 
         confirm_dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Confirm Deletion"),
-            content=ft.Text("Are you sure? This cannot be undone."),
-            actions=[
-                ft.TextButton("Cancel", on_click=close_dialog),
-                ft.FilledButton("Delete", on_click=confirm_action, style=ft.ButtonStyle(bgcolor=ft.Colors.RED_700)),
-            ],
+            title=ft.Text("Please confirm"),
+            content=ft.Text("Do you really want to delete this character?"),
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.dialog = confirm_dialog
-        confirm_dialog.open = True
+
+        async def confirm_action(e_dialog):
+            # First, close the dialog.
+            self.page.close(confirm_dialog)
+            # Then, perform the async deletion.
+            await self._delete_character_async(character_id)
+
+        def cancel_action(e_dialog):
+            # Just close the dialog.
+            self.page.close(confirm_dialog)
+
+        # Assign actions that have access to the `confirm_dialog` instance.
+        confirm_dialog.actions = [
+            ft.TextButton("Yes, delete", on_click=confirm_action, style=ft.ButtonStyle(color=ft.Colors.RED)),
+            ft.TextButton("No, cancel", on_click=cancel_action),
+        ]
+
+        # Open the dialog using the official, robust page method.
+        self.page.open(confirm_dialog)
+        # An update is required to show the dialog on the page.
         self.page.update()
 
     async def _delete_character_async(self, character_id):
-        """Performs the asynchronous deletion."""
+        """Performs the actual asynchronous deletion from the database."""
         try:
             await supabase.client.from_('characters').delete().eq('id', character_id).execute()
-            self.page.snack_bar = ft.SnackBar(ft.Text("Character deleted."), bgcolor=ft.Colors.GREEN_700)
+            self.page.open(ft.SnackBar(
+                content=ft.Text("Character deleted successfully."),
+                bgcolor=ft.Colors.GREEN_700
+            ))
+            # After deletion, refresh the character list
             await self._get_characters()
         except Exception as e:
-            self.page.snack_bar = ft.SnackBar(ft.Text(f"Error: {e}"), bgcolor=ft.Colors.RED_700)
-        finally:
-            self.page.snack_bar.open = True
+            print(f"Error in _delete_character_async: {e}") # Log the full error for debugging
+            self.page.open(ft.SnackBar(
+                content=ft.Text(f"Error deleting character: {e}"),
+                bgcolor=ft.Colors.RED_700
+            ))
             self.page.update()
