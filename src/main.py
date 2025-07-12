@@ -4,13 +4,14 @@ import flet as ft
 import asyncio
 import json
 
-from .views.main_view import MainView
-from .views.worlds_view import WorldsView
-from .views.settings_view import SettingsView
-from .views.login_view import LoginView
-from .views.campaigns_view import CampaignsView
-from .views.characters_view import CharactersView
-from .services.supabase_service import supabase
+from src.views.main_view import MainView
+from src.views.worlds_view import WorldsView
+from src.views.settings_view import SettingsView
+from src.views.login_view import LoginView
+from src.views.campaigns_view import CampaignsView
+from src.views.characters_view import CharactersView
+from src.views.character_form_view import CharacterFormView
+from src.services.supabase_service import supabase
 
 
 async def main(page: ft.Page):
@@ -35,7 +36,8 @@ async def main(page: ft.Page):
         "/settings": SettingsView,
         "/login": LoginView,
         "/campaigns": CampaignsView,
-        "/characters": CharactersView
+        "/characters": CharactersView,
+        "/character_edit": CharacterFormView
     }
 
     async def route_change(route):
@@ -73,8 +75,13 @@ async def main(page: ft.Page):
         if page.route != "/" and page.route != "/login":
             if page.route in app_views:
                 page.views.append(app_views[page.route](page))
+                print("Route added to {page}")
             elif page.route.startswith("/worlds/") and page.route.endswith("/campaigns"):
                 page.views.append(app_views["/campaigns"](page))
+                print("Route to Campaigns added")
+            elif page.route.startswith("/characters/") and page.route.endswith("/character_edit"):
+                page.views.append(app_views["/character_edit"](page))
+                print("Route to Character edit added")
 
         page.update()
 

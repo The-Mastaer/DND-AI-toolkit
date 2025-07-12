@@ -50,9 +50,9 @@ class MainView(ft.View):
                     label="Worlds",
                 ),
                 ft.NavigationRailDestination(
-                    icon=ft.Icons.PERCENT_OUTLINED,
-                    selected_icon=ft.Icons.PERSON,
-                    label="Worlds",
+                    icon=ft.Icons.PEOPLE_OUTLINE, # Corrected Icon
+                    selected_icon=ft.Icons.PEOPLE, # Corrected Selected Icon
+                    label="Characters", # Corrected Label
                 ),
                 ft.NavigationRailDestination(
                     icon=ft.Icons.SETTINGS_OUTLINED,

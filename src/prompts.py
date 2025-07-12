@@ -50,5 +50,27 @@ Answer concisely and accurately. This is a single-turn, question-and-answer inte
 """
 
 GENERATE_NPC_PROMPT = """
-Test
+You are an expert Dungeons & Dragons Dungeon Master. Your task is to generate a complete Non-Player Character (NPC) based on the provided parameters.
+Return the output as a single, clean JSON object. Do not include any text, notes, or formatting before or after the JSON object (e.g., do not wrap it in ```json ... ```).
+
+**JSON Schema to use for the response:**
+{{
+    "name": "string (A fantasy name appropriate for the given race)",
+    "appearance": "string (A detailed physical description of the character, 2-3 sentences)",
+    "personality": "string (Describe their traits, demeanor, and motivations, 2-3 sentences)",
+    "backstory": "string (A brief history of the character, 2-3 sentences)",
+    "plot_hooks": "string (A bulleted list of 2-3 specific, actionable plot hooks for a DM, using '*' for bullets)",
+    "roleplaying_tips": "string (Provide tips on mannerisms, voice, and attitude for the DM, 2-3 sentences)"
+}}
+
+**NPC Generation Parameters:**
+- Race: {race}
+- Class: {char_class}
+- Environment: {environment}
+- Hostility: {hostility}
+- Rarity: {rarity}
+- Background: {background}
+- Custom Instructions: {custom_prompt}
+
+Generate the NPC JSON object now.
 """
