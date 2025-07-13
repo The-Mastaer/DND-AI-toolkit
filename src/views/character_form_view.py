@@ -122,8 +122,7 @@ class CharacterFormView(ft.View):
                 self._populate_fields(response.data)
                 self.page.update()
         except Exception as e:
-            self.page.snack_bar = ft.SnackBar(ft.Text(f"Error loading character: {e}"), bgcolor=ft.Colors.RED)
-            self.page.snack_bar.open = True
+            self.page.open(ft.SnackBar(ft.Text(f"Error loading character: {e}"), bgcolor=ft.Colors.RED))
             self.page.update()
 
     def _populate_fields(self, data):
@@ -196,16 +195,11 @@ class CharacterFormView(ft.View):
                 await supabase.client.from_('characters').insert(character_data_to_save).execute()
                 message = "Character created!"
 
-            self.page.snack_bar = ft.SnackBar(content=ft.Text(message), bgcolor=ft.Colors.GREEN_700)
-            self.page.snack_bar.open = True
+            self.page.open(ft.SnackBar(ft.Text(message), bgcolor=ft.Colors.GREEN_700))
             self.page.update()
         except Exception as ex:
             print(f"--- Supabase Save Error: {ex} ---")
-            self.page.snack_bar = ft.SnackBar(content=ft.Text(f"Error saving: {ex}"), bgcolor=ft.Colors.RED_700)
-            self.page.snack_bar.open = True
-            self.page.update()
-        finally:
-            self.page.snack_bar.open = True
+            self.page.open(ft.SnackBar(ft.Text(f"Error saving: {ex}"), bgcolor=ft.Colors.RED_700))
             self.page.update()
 
     def generate_npc_click(self, e):
@@ -262,17 +256,16 @@ class CharacterFormView(ft.View):
             self.hostility_dropdown.value = prompt_params["hostility"]
             self.rarity_dropdown.value = prompt_params["rarity"]
 
-            self.page.snack_bar = ft.SnackBar(ft.Text("NPC data generated!"), bgcolor=ft.Colors.GREEN_700)
+            self.page.open(ft.SnackBar(ft.Text("NPC data generated!"), bgcolor=ft.Colors.GREEN_700))
 
         except json.JSONDecodeError:
             print("--- Gemini response was not valid JSON. ---")
-            self.page.snack_bar = ft.SnackBar(ft.Text("AI response was not valid JSON. Please try again."),
-                                              bgcolor=ft.Colors.AMBER_700)
+            self.page.open(ft.SnackBar(ft.Text("AI response was not valid JSON. Please try again."),
+                                              bgcolor=ft.Colors.AMBER_700))
         except Exception as e:
             print(f"--- An error occurred during NPC generation: {e} ---")
-            self.page.snack_bar = ft.SnackBar(ft.Text(f"An error occurred: {e}"), bgcolor=ft.Colors.RED_700)
+            self.page.open(ft.SnackBar(ft.Text(f"An error occurred: {e}"), bgcolor=ft.Colors.RED_700))
         finally:
             self.generation_progress_ring.visible = False
             self.generate_npc_button.disabled = False
-            self.page.snack_bar.open = True
             self.page.update()

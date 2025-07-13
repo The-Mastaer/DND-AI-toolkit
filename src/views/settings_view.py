@@ -174,6 +174,7 @@ class SettingsView(ft.View):
             "app.theme_mode": "dark" if self.theme_mode_switch.value else "light",
             "app.theme_color": self.theme_color_dropdown.value,
             "ai.model": self.model_dropdown.value,
+            "picture_model": self.model_dropdown.value,
             "prompt.rules_lawyer": self.rules_lawyer_prompt_field.value,
             "active_world_id": self.worlds_dropdown.value,
             "active_campaign_id": self.campaigns_dropdown.value,
