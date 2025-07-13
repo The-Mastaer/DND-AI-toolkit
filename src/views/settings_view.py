@@ -3,7 +3,7 @@
 import flet as ft
 from services.supabase_service import supabase
 from services.gemini_service import GeminiService
-from config import THEME_COLORS, TEXT_MODELS, DEFAULT_TEXT_MODEL
+from config import THEME_COLORS, TEXT_MODELS, DEFAULT_TEXT_MODEL, IMAGE_MODELS, DEFAULT_IMAGE_MODEL
 from prompts import SRD_QUERY_PROMPT
 import asyncio
 
@@ -78,6 +78,12 @@ class SettingsView(ft.View):
             options=[ft.dropdown.Option(key, text) for key, text in TEXT_MODELS.items()],
             expand=True
         )
+        self.model_dropdown_pic = ft.Dropdown(
+            label="AI Model",
+            # DEBUG FIX: Use the TEXT_MODELS dictionary from config
+            options=[ft.dropdown.Option(key, text) for key, text in IMAGE_MODELS.items()],
+            expand=True
+        )
         self.rules_lawyer_prompt_field = ft.TextField(
             label="Rules Lawyer System Prompt",
             multiline=True,
@@ -91,6 +97,7 @@ class SettingsView(ft.View):
                 content=ft.Column([
                     ft.ListTile(leading=ft.Icon(ft.Icons.SMART_TOY), title=ft.Text("AI Configuration")),
                     self.model_dropdown,
+                    self.model_dropdown_pic,
                     self.rules_lawyer_prompt_field,
                     ft.Row([self.upload_srd_button, self.upload_status],
                            vertical_alignment=ft.CrossAxisAlignment.CENTER),
@@ -129,6 +136,7 @@ class SettingsView(ft.View):
             "app.theme_mode": (self.theme_mode_switch, "value", "dark"),
             "app.theme_color": (self.theme_color_dropdown, "value", "blue"),
             "ai.model": (self.model_dropdown, "value", DEFAULT_TEXT_MODEL),
+            "picture.model": (self.model_dropdown_pic, "value", DEFAULT_IMAGE_MODEL),
             "prompt.rules_lawyer": (self.rules_lawyer_prompt_field, "value", SRD_QUERY_PROMPT),
             "active_world_id": (self.worlds_dropdown, "value", None),
             "active_campaign_id": (self.campaigns_dropdown, "value", None),
