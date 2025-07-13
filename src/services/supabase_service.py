@@ -104,6 +104,26 @@ class SupabaseService:
         response = await self.client.from_('campaigns').select("*").eq('id', campaign_id).single().execute()
         return response
 
+    async def get_world_and_campaign_details(self, campaign_id: int) -> dict:
+        """
+        Fetches world and campaign details needed for generating a portrait prompt.
+        This is more efficient than separate calls from the view.
+        """
+        if not self.client:
+            raise Exception("Supabase client not initialized.")
+        print(f"--- Fetching world and campaign context for campaign ID: {campaign_id} ---")
+        try:
+            # The 'campaigns' table has a 'world_id' foreign key. We can join them.
+            # The syntax `worlds(*)` tells Supabase to fetch all columns from the related 'worlds' table.
+            response = await self.client.from_('campaigns').select("*, worlds(*)").eq('id', campaign_id).single().execute()
+            if response.data:
+                return response.data
+            return {}
+        except Exception as e:
+            print(f"--- ERROR fetching world/campaign context: {e} ---")
+            return {}
+
+
     async def upload_file(self, bucket_name: str, file_path: str, file_content: bytes) -> dict:
         """
         Uploads a file to the specified Supabase storage bucket.
@@ -126,9 +146,6 @@ class SupabaseService:
         """
         if not self.client:
             raise Exception("Supabase client not initialized.")
-
-        # --- FIX: The get_public_url method from the async client is a coroutine and must be awaited. ---
-        # Note: The 'path' argument is required by the library here.
         public_url = await self.client.storage.from_(bucket_name).get_public_url(path=file_path)
         print(f"--- Constructed public URL: {public_url} ---")
         return public_url

@@ -53,6 +53,8 @@ GENERATE_NPC_PROMPT = """
 You are an expert Dungeons & Dragons Dungeon Master. Your task is to generate a complete Non-Player Character (NPC) based on the provided parameters.
 Return the output as a single, clean JSON object. Do not include any text, notes, or formatting before or after the JSON object (e.g., do not wrap it in ```json ... ```).
 
+**Critical Instruction:** You MUST integrate specific details from the provided **World Context** and **Campaign Context** (if provided) into the NPC's backstory and plot hooks. Make the character feel like a living part of this specific setting, referencing its locations, events, factions, or notable figures.
+
 **JSON Schema to use for the response:**
 {{
     "name": "string (A fantasy name appropriate for the given race)",
@@ -62,6 +64,10 @@ Return the output as a single, clean JSON object. Do not include any text, notes
     "plot_hooks": "string (A bulleted list of 2-3 specific, actionable plot hooks for a DM, using '*' for bullets)",
     "roleplaying_tips": "string (Provide tips on mannerisms, voice, and attitude for the DM, 2-3 sentences)"
 }}
+
+**Background Context:**
+- **World Context:** {world_context}
+- **Campaign Context:** {campaign_context}
 
 **NPC Generation Parameters:**
 - Race: {race}
@@ -91,6 +97,11 @@ GENERATE_PORTRAIT_PROMPT = """
 - **Lighting:** Dramatic, cinematic lighting that highlights the character's features and mood.
 - **Background:** A simple, atmospheric background that complements the character's environment but does not distract from them.
 - **Color Palette:** Rich, evocative colors that match the character's personality and class.
+
+**Contextual Information (Use this to influence the character's gear, clothing style, and subtle details):**
+- **Environment:** The character is typically found in a {environment} environment.
+- **World Context:** {world_context}
+- **Campaign Context:** {campaign_context}
 
 **Instructions:**
 - **Do not include any text, watermarks, or signatures in the image.**

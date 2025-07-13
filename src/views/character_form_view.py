@@ -63,21 +63,32 @@ class CharacterFormView(ft.View):
         self.generate_npc_button = ft.FilledButton("Generate with AI", on_click=self.generate_npc_click)
         self.generation_progress_ring = ft.ProgressRing(width=20, height=20, stroke_width=2, visible=False)
 
+        self.portrait_placeholder = ft.Container(
+            content=ft.Icon(ft.Icons.PORTRAIT, size=64),
+            alignment=ft.alignment.center,
+            width=256,
+            height=256,
+            border=ft.border.all(1, ft.Colors.OUTLINE),
+            border_radius=5,
+        )
         self.portrait_image = ft.Image(
             src=None,
             width=256,
             height=256,
             fit=ft.ImageFit.COVER,
             border_radius=5,
-            error_content=ft.Container(
-                content=ft.Icon(ft.Icons.PORTRAIT, size=64),
-                alignment=ft.alignment.center,
-                width=256,
-                height=256,
-                border=ft.border.all(1, ft.Colors.OUTLINE),
-                border_radius=5,
-            )
         )
+        self.portrait_display = ft.Container(
+            content=self.portrait_placeholder,
+            alignment=ft.alignment.center
+        )
+
+        self.include_campaign_context_checkbox = ft.Checkbox(
+            label="Include Campaign Context",
+            value=True,
+            tooltip="If checked, generation will use campaign lore for more specific details."
+        )
+
         self.upload_portrait_button = ft.ElevatedButton("Upload Portrait", on_click=self.upload_portrait_click)
         self.generate_portrait_button = ft.FilledButton("Generate Portrait", on_click=self.generate_portrait_click)
         self.portrait_progress_ring = ft.ProgressRing(width=20, height=20, stroke_width=2, visible=False)
@@ -105,12 +116,10 @@ class CharacterFormView(ft.View):
                             ft.Row([self.rarity_dropdown, self.background_dropdown]),
                             self.custom_prompt_field,
                             ft.Row([self.generate_npc_button, self.generation_progress_ring]),
+                            self.include_campaign_context_checkbox,
                             ft.Divider(),
                             ft.Text("Character Portrait", style=ft.TextThemeStyle.TITLE_MEDIUM, size=14),
-                            ft.Container(
-                                content=self.portrait_image,
-                                alignment=ft.alignment.center
-                            ),
+                            self.portrait_display,
                             ft.Row(
                                 [
                                     self.upload_portrait_button,
@@ -118,7 +127,7 @@ class CharacterFormView(ft.View):
                                     self.portrait_progress_ring
                                 ],
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN
-                            )
+                            ),
                         ],
                         spacing=10,
                         expand=1
@@ -148,7 +157,6 @@ class CharacterFormView(ft.View):
             self.page.update()
 
     def _populate_fields(self, data):
-        print("--- Populating form fields with loaded data. ---")
         lang_code = 'en'
         self.name_field.value = data.get('name', '')
         self.appearance_field.value = data.get('appearance', {}).get(lang_code, '')
@@ -157,7 +165,6 @@ class CharacterFormView(ft.View):
         self.plot_hooks_field.value = data.get('plot_hooks', {}).get(lang_code, '')
         self.roleplaying_tips_field.value = data.get('roleplaying_tips', {}).get(lang_code, '')
 
-        # PLACEHOLDER: attributes = data.get('attributes', {})
         self.race_dropdown.value = data.get('race')
         self.class_dropdown.value = data.get('class')
         self.background_dropdown.value = data.get('background')
@@ -168,16 +175,15 @@ class CharacterFormView(ft.View):
 
         self.portrait_url = data.get('portrait_url')
         if self.portrait_url:
-            print(f"--- Loading portrait from URL: {self.portrait_url} ---")
             self.portrait_image.src = self.portrait_url
+            self.portrait_display.content = self.portrait_image
         else:
-            self.portrait_image.src = None
+            self.portrait_display.content = self.portrait_placeholder
 
     def save_character_click(self, e):
         self.page.run_task(self._save_character)
 
     async def _save_character(self):
-        print("--- Starting _save_character method. ---")
         if not self.name_field.value:
             self.name_field.error_text = "Name is required."
             self.page.update()
@@ -203,7 +209,7 @@ class CharacterFormView(ft.View):
             "environment": self.environment_dropdown.value,
             "hostility": self.hostility_dropdown.value,
             "rarity": self.rarity_dropdown.value,
-            "custom_prompt": self.custom_prompt_field.value,
+            "custom_prompt": self.custom_prompt_field.value or "",
         }
 
         try:
@@ -221,7 +227,6 @@ class CharacterFormView(ft.View):
             self.page.open(ft.SnackBar(ft.Text(message), bgcolor=ft.Colors.GREEN_700))
             self.page.update()
         except Exception as ex:
-            print(f"--- Supabase Save Error: {ex} ---")
             self.page.open(ft.SnackBar(ft.Text(f"Error saving: {ex}"), bgcolor=ft.Colors.RED_700))
             self.page.update()
 
@@ -238,6 +243,11 @@ class CharacterFormView(ft.View):
 
         try:
             model_name = await asyncio.to_thread(self.page.client_storage.get, "ai.model") or DEFAULT_TEXT_MODEL
+
+            world_context, campaign_context = await self._fetch_context_for_prompt(
+                include_campaign=self.include_campaign_context_checkbox.value
+            )
+
             prompt_params = {
                 "race": get_choice(self.race_dropdown, DND_RACES),
                 "char_class": get_choice(self.class_dropdown, DND_CLASSES),
@@ -245,18 +255,29 @@ class CharacterFormView(ft.View):
                 "hostility": get_choice(self.hostility_dropdown, DND_HOSTILITIES),
                 "rarity": get_choice(self.rarity_dropdown, DND_RARITIES),
                 "background": get_choice(self.background_dropdown, DND_BACKGROUNDS),
-                "custom_prompt": self.custom_prompt_field.value or "None"
+                "custom_prompt": self.custom_prompt_field.value or "None",
+                "world_context": world_context,
+                "campaign_context": campaign_context
             }
             prompt = GENERATE_NPC_PROMPT.format(**prompt_params)
+
+            # --- DEBUGGING: Print the final prompt ---
+            print("=" * 50)
+            print("--- FINAL PROMPT SENT TO GEMINI FOR NPC GENERATION ---")
+            print(prompt)
+            print("=" * 50)
+
             response_text = await self.gemini_service.get_text_response(prompt, model_name=model_name)
             clean_response = response_text.strip().replace("```json", "").replace("```", "")
             npc_data = json.loads(clean_response)
+
             self.name_field.value = npc_data.get("name", "")
             self.appearance_field.value = npc_data.get("appearance", "")
             self.personality_field.value = npc_data.get("personality", "")
             self.backstory_field.value = npc_data.get("backstory", "")
             self.plot_hooks_field.value = npc_data.get("plot_hooks", "")
             self.roleplaying_tips_field.value = npc_data.get("roleplaying_tips", "")
+
             self.race_dropdown.value = prompt_params["race"]
             self.class_dropdown.value = prompt_params["char_class"]
             self.background_dropdown.value = prompt_params["background"]
@@ -265,18 +286,17 @@ class CharacterFormView(ft.View):
             self.rarity_dropdown.value = prompt_params["rarity"]
             self.page.open(ft.SnackBar(ft.Text("NPC data generated!"), bgcolor=ft.Colors.GREEN_700))
         except Exception as e:
-            self.page.open(ft.SnackBar(ft.Text(f"An error occurred: {e}"), bgcolor=ft.Colors.RED_700))
+            self.page.open(
+                ft.SnackBar(ft.Text(f"An error occurred during NPC generation: {e}"), bgcolor=ft.Colors.RED_700))
         finally:
             self.generation_progress_ring.visible = False
             self.generate_npc_button.disabled = False
             self.page.update()
 
     def upload_portrait_click(self, e):
-        print("--- Upload portrait button clicked. ---")
         self.file_picker.pick_files(allow_multiple=False, allowed_extensions=["png", "jpg", "jpeg"])
 
     def generate_portrait_click(self, e):
-        print("--- Generate portrait button clicked. ---")
         if not self.appearance_field.value:
             self.page.open(ft.SnackBar(ft.Text("Please provide an appearance description first."),
                                        bgcolor=ft.Colors.AMBER_700))
@@ -286,7 +306,6 @@ class CharacterFormView(ft.View):
 
     async def on_file_picker_result(self, e: ft.FilePickerResultEvent):
         if not e.files:
-            print("--- File picker cancelled. ---")
             return
         selected_file = e.files[0]
         self.portrait_progress_ring.visible = True
@@ -305,6 +324,47 @@ class CharacterFormView(ft.View):
             self.generate_portrait_button.disabled = False
             self.page.update()
 
+    async def _fetch_context_for_prompt(self, include_campaign=True):
+        print("\n--- DEBUG: Fetching context for prompt ---")
+        lang_code = await asyncio.to_thread(self.page.client_storage.get, "user_language") or 'en'
+        world_id = await asyncio.to_thread(self.page.client_storage.get, "active_world_id")
+        print(f"DEBUG: Current World ID from storage: {world_id}")
+
+        world_context = "No world information available."
+        if world_id:
+            try:
+                world_res = await supabase.client.from_("worlds").select("lore").eq("id", world_id).single().execute()
+                if world_res.data and world_res.data.get("lore"):
+                    world_context = world_res.data["lore"].get(lang_code, "Lore not available in selected language.")
+                    print(f"DEBUG: Successfully fetched World Context (first 50 chars): {world_context[:50]}...")
+                else:
+                    print("DEBUG: World lore was empty or not found in the response.")
+            except Exception as e:
+                print(f"--- DEBUG ERROR: Could not fetch world context: {e} ---")
+
+        campaign_context = "Not applicable."
+        if include_campaign:
+            campaign_id = await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id")
+            print(f"DEBUG: Current Campaign ID from storage: {campaign_id}")
+            if campaign_id:
+                try:
+                    campaign_res = await supabase.client.from_("campaigns").select("party_info, session_history").eq(
+                        "id", campaign_id).single().execute()
+                    if campaign_res.data:
+                        party = campaign_res.data.get("party_info", {}).get(lang_code, "N/A")
+                        history = campaign_res.data.get("session_history", {}).get(lang_code, "N/A")
+                        campaign_context = f"Party Information: {party}\nSession History: {history}"
+                        print(
+                            f"DEBUG: Successfully fetched Campaign Context (first 50 chars): {campaign_context[:50]}...")
+                    else:
+                        print("DEBUG: Campaign data was empty or not found in the response.")
+                except Exception as e:
+                    print(f"--- DEBUG ERROR: Could not fetch campaign context: {e} ---")
+        else:
+            print("DEBUG: Skipping campaign context fetch because checkbox is unchecked.")
+
+        return world_context, campaign_context
+
     async def _generate_portrait_async(self):
         self.portrait_progress_ring.visible = True
         self.upload_portrait_button.disabled = True
@@ -312,7 +372,28 @@ class CharacterFormView(ft.View):
         self.page.update()
         try:
             model_name = await asyncio.to_thread(self.page.client_storage.get, "picture.model") or DEFAULT_IMAGE_MODEL
-            prompt = GENERATE_PORTRAIT_PROMPT
+
+            include_campaign = self.include_campaign_context_checkbox.value
+            world_context, campaign_context = await self._fetch_context_for_prompt(include_campaign=include_campaign)
+
+            prompt_params = {
+                "appearance": self.appearance_field.value or "A generic fantasy character.",
+                "personality": self.personality_field.value or "A neutral expression.",
+                "race": self.race_dropdown.value or "Human",
+                "char_class": self.class_dropdown.value or "Commoner",
+                "environment": self.environment_dropdown.value or "a neutral setting",
+                "world_context": world_context,
+                "campaign_context": campaign_context
+            }
+
+            prompt = GENERATE_PORTRAIT_PROMPT.format(**prompt_params)
+
+            # --- DEBUGGING: Print the final prompt ---
+            print("=" * 50)
+            print("--- FINAL PROMPT SENT TO GEMINI FOR PORTRAIT GENERATION ---")
+            print(prompt)
+            print("=" * 50)
+
             image_bytes = await self.gemini_service.generate_image(prompt, model_name)
             if image_bytes:
                 await self._upload_and_update_portrait(image_bytes, "generated_portrait.png")
@@ -333,10 +414,11 @@ class CharacterFormView(ft.View):
         storage_path = f"portraits/{user.id}/{timestamp}_{file_name}"
         await supabase.upload_file("assets", storage_path, file_bytes)
 
-        # --- FIX: Added 'await' to the call to the async get_public_url method. ---
         public_url = await supabase.get_public_url("assets", storage_path)
 
         self.portrait_url = public_url
         self.portrait_image.src = public_url
+        self.portrait_display.content = self.portrait_image
+
         self.page.open(ft.SnackBar(ft.Text("Portrait updated successfully!"), bgcolor=ft.Colors.GREEN_700))
         self.page.update()
