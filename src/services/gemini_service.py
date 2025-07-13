@@ -2,7 +2,7 @@
 
 from google import genai
 from google.genai import types
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, DEFAULT_IMAGE_MODEL
 from services.supabase_service import supabase
 import tempfile
 import pathlib
@@ -21,6 +21,7 @@ class GeminiService:
         """
         if not GEMINI_API_KEY:
             raise ValueError("GEMINI_API_KEY is not set in the environment variables.")
+        print("--- Initializing Gemini Service ---")
         self.client = genai.Client(api_key=GEMINI_API_KEY)
 
     def start_chat_session(self, initial_context: str, model_name: str):
@@ -29,7 +30,6 @@ class GeminiService:
         """
         print(f"--- Starting new Gemini Chat Session with model: {model_name} ---")
         chat_session = self.client.chats.create(
-            # UPDATED: Removed the 'models/' prefix.
             model=model_name,
             history=[
                 {'role': 'user', 'parts': [{'text': initial_context}]},
@@ -60,7 +60,6 @@ class GeminiService:
                 print(f"Uploading file from temporary path: {tmp_file_path}")
                 srd_file = await asyncio.to_thread(
                     self.client.files.upload,
-                    # UPDATED: Changed 'file_path' to 'file'.
                     file=tmp_file_path,
                 )
                 print(f"--- Successfully uploaded to Gemini as: {srd_file.name} ---")
@@ -94,14 +93,11 @@ class GeminiService:
         """
         print(f"--- Querying Gemini with file {srd_file.name} using model {model_name} ---")
         try:
-            # UPDATED: System prompt is now passed in the config object.
             generation_config = types.GenerateContentConfig(
                 system_instruction=system_prompt
             )
-            # UPDATED: Contents list now only contains the file and the question.
             contents = [srd_file, question]
             response = await self.client.aio.models.generate_content(
-                # UPDATED: Removed the 'models/' prefix.
                 model=model_name,
                 contents=contents,
                 config=generation_config
@@ -118,7 +114,6 @@ class GeminiService:
         print(f"--- Getting simple text response from Gemini using model {model_name} ---")
         try:
             response = await self.client.aio.models.generate_content(
-                # UPDATED: Removed the 'models/' prefix.
                 model=model_name,
                 contents=prompt
             )
@@ -126,6 +121,35 @@ class GeminiService:
         except Exception as e:
             print(f"--- ERROR during text generation: {e} ---")
             return f"An error occurred: {e}"
+
+    async def generate_image(self, prompt: str, model_name: str) -> bytes | None:
+        """
+        Generates an image using the specified model and prompt.
+
+        Args:
+            prompt (str): The text prompt for image generation.
+            model_name (str): The image generation model to use.
+
+        Returns:
+            bytes | None: The image bytes if successful, otherwise None.
+        """
+        print(f"--- Generating portrait with Gemini using model: {model_name} ---")
+        try:
+            response = await self.client.aio.models.generate_images(
+                model=model_name,
+                prompt=prompt,
+                config=types.GenerateImagesConfig(number_of_images=1)
+            )
+            if response.generated_images:
+                print("--- Image generated successfully. ---")
+                return response.generated_images[0].image.image_bytes
+            else:
+                print("--- Gemini returned no images. ---")
+                return None
+        except Exception as e:
+            print(f"--- ERROR during image generation: {e} ---")
+            return None
+
 
 # A single, shared instance of the service that can be imported elsewhere.
 gemini_service = GeminiService()

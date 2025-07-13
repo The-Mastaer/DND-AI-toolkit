@@ -48,11 +48,9 @@ class SupabaseService:
         """
         if self.client:
             response = await self.client.auth.get_user()
-            # --- FIX: Check if the response and user exist ---
             if response and response.user:
                 self.user = response.user
                 return self.user
-            # If anything fails or there's no user, return None
         self.user = None
         return None
 
@@ -112,9 +110,28 @@ class SupabaseService:
         """
         if not self.client:
             raise Exception("Supabase client not initialized.")
-
-        response = await self.client.storage.from_(bucket_name).upload(file=file_content, path=file_path)
+        print(f"--- Uploading file to Supabase Storage. Bucket: {bucket_name}, Path: {file_path} ---")
+        response = await self.client.storage.from_(bucket_name).upload(
+            path=file_path,
+            file=file_content,
+            file_options={"content-type": "image/png"}
+        )
+        print(f"--- Supabase upload response: {response} ---")
         return response
+
+    async def get_public_url(self, bucket_name: str, file_path: str) -> str:
+        """
+        Constructs the public URL for a file in Supabase storage.
+        This is now an async method to correctly handle the underlying library call.
+        """
+        if not self.client:
+            raise Exception("Supabase client not initialized.")
+
+        # --- FIX: The get_public_url method from the async client is a coroutine and must be awaited. ---
+        # Note: The 'path' argument is required by the library here.
+        public_url = await self.client.storage.from_(bucket_name).get_public_url(path=file_path)
+        print(f"--- Constructed public URL: {public_url} ---")
+        return public_url
 
     async def download_file(self, bucket_name: str, file_path: str) -> bytes:
         """

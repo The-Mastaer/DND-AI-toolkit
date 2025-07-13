@@ -74,3 +74,26 @@ Return the output as a single, clean JSON object. Do not include any text, notes
 
 Generate the NPC JSON object now.
 """
+
+GENERATE_PORTRAIT_PROMPT = """
+**Objective:** Create a photorealistic, waist-up portrait of a fantasy character for a Dungeons & Dragons game. The image should be in a 1:1 aspect ratio, suitable for a character token.
+
+**Character Description:**
+- **Appearance:** {appearance}
+- **Personality:** {personality}
+- **Race:** {race}
+- **Class:** {char_class}
+- **Environment:** {environment}
+
+**Artistic Style:**
+- **Medium:** Digital painting
+- **Style:** Photorealistic with a touch of heroic fantasy (inspired by artists like Todd Lockwood and Greg Rutkowski).
+- **Lighting:** Dramatic, cinematic lighting that highlights the character's features and mood.
+- **Background:** A simple, atmospheric background that complements the character's environment but does not distract from them.
+- **Color Palette:** Rich, evocative colors that match the character's personality and class.
+
+**Instructions:**
+- **Do not include any text, watermarks, or signatures in the image.**
+- **Focus on the character's expression and details.**
+- **The final image must be a 1:1 square.**
+"""
