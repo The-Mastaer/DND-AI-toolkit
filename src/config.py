@@ -14,6 +14,9 @@ SUPABASE_KEY: Optional[str] = os.getenv("SUPABASE_KEY")
 # Gemini API configuration
 GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
 
+# Permanent ID for the master SRD document on Gemini's File API
+GEMINI_SRD_FILE_NAME = os.getenv("GEMINI_SRD_FILE_NAME")
+
 # --- Application Settings ---
 SUPPORTED_LANGUAGES = {
     "en": "English",

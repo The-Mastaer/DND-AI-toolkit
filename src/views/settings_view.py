@@ -4,7 +4,6 @@ import flet as ft
 from services.supabase_service import supabase
 from services.gemini_service import GeminiService
 from config import THEME_COLORS, TEXT_MODELS, DEFAULT_TEXT_MODEL, IMAGE_MODELS, DEFAULT_IMAGE_MODEL
-from prompts import SRD_QUERY_PROMPT
 import asyncio
 
 
@@ -34,9 +33,6 @@ class SettingsView(ft.View):
             actions=[ft.IconButton(icon=ft.Icons.LOGOUT, on_click=self.logout_clicked, tooltip="Logout")]
         )
 
-        # --- File Picker for SRD Upload ---
-        self.file_picker = ft.FilePicker(on_result=self.on_file_picker_result)
-        self.page.overlay.append(self.file_picker)
 
         # --- UI Controls ---
         # Appearance Card
@@ -89,8 +85,7 @@ class SettingsView(ft.View):
             multiline=True,
             min_lines=3
         )
-        self.upload_srd_button = ft.ElevatedButton("Upload SRD Document", icon=ft.Icons.UPLOAD_FILE,
-                                                   on_click=self.upload_srd_clicked)
+
         self.upload_status = ft.Text(size=12)
         ai_config_card = ft.Card(
             content=ft.Container(
@@ -99,8 +94,6 @@ class SettingsView(ft.View):
                     self.model_dropdown,
                     self.model_dropdown_pic,
                     self.rules_lawyer_prompt_field,
-                    ft.Row([self.upload_srd_button, self.upload_status],
-                           vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ]),
                 padding=16
             )
@@ -137,7 +130,6 @@ class SettingsView(ft.View):
             "app.theme_color": (self.theme_color_dropdown, "value", "blue"),
             "ai.model": (self.model_dropdown, "value", DEFAULT_TEXT_MODEL),
             "picture.model": (self.model_dropdown_pic, "value", DEFAULT_IMAGE_MODEL),
-            "prompt.rules_lawyer": (self.rules_lawyer_prompt_field, "value", SRD_QUERY_PROMPT),
             "active_world_id": (self.worlds_dropdown, "value", None),
             "active_campaign_id": (self.campaigns_dropdown, "value", None),
         }
@@ -221,45 +213,6 @@ class SettingsView(ft.View):
             print(f"Error loading campaigns: {e}")
             self.campaigns_dropdown.options = []
         self.update()
-
-    def upload_srd_clicked(self, e):
-        """Opens the file picker to select an SRD document."""
-        self.file_picker.pick_files(allow_multiple=False, allowed_extensions=["pdf"])
-
-    async def on_file_picker_result(self, e: ft.FilePickerResultEvent):
-        """Handles the result of the file picker selection."""
-        if e.files:
-            selected_file = e.files[0]
-            self.upload_status.value = f"Uploading {selected_file.name}..."
-            self.upload_srd_button.disabled = True
-            self.update()
-
-            try:
-                with open(selected_file.path, "rb") as f:
-                    file_content = f.read()
-
-                user = await supabase.get_user()
-                if not user: raise Exception("User not authenticated.")
-
-                bucket_path = f"{user.id}/srd_document.pdf"
-                await supabase.upload_file("documents", bucket_path, file_content)
-
-                gemini_file_name = await self.gemini_service.upload_srd_to_gemini(bucket_path)
-
-                if gemini_file_name:
-                    await asyncio.to_thread(self.page.client_storage.set, "srd_document_bucket_path", bucket_path)
-                    await asyncio.to_thread(self.page.client_storage.set, "gemini_srd_file_name", gemini_file_name)
-                    self.upload_status.value = "Upload successful!"
-                    self.upload_status.color = ft.Colors.GREEN
-                else:
-                    raise Exception("Failed to upload file to Gemini.")
-
-            except Exception as ex:
-                self.upload_status.value = f"Upload failed: {ex}"
-                self.upload_status.color = ft.Colors.RED
-            finally:
-                self.upload_srd_button.disabled = False
-                self.update()
 
     async def logout_clicked(self, e):
         """Logs the user out and clears the session."""

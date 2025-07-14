@@ -6,8 +6,7 @@ import asyncio
 from services.supabase_service import supabase
 from services.gemini_service import GeminiService
 from prompts import SRD_QUERY_PROMPT
-# DEBUG FIX: Corrected the import to use the variables from config.py
-from config import DEFAULT_TEXT_MODEL
+from config import DEFAULT_TEXT_MODEL, GEMINI_SRD_FILE_NAME
 
 
 class MainView(ft.View):
@@ -136,6 +135,7 @@ class MainView(ft.View):
 
     def did_mount(self):
         """Initializes the view when it's added to the page."""
+        # Load the context for the initially selected tab (Lore Master)
         self.page.run_task(self.initialize_lore_master)
 
     def nav_change(self, e):
@@ -153,14 +153,15 @@ class MainView(ft.View):
     def tabs_changed(self, e):
         """Handles switching between Lore Master and Rules Lawyer tabs."""
         selected_index = e.control.selected_index
-        if selected_index == 0:
+        if selected_index == 0:  # Lore Master
             self.user_input.hint_text = "Ask the Lore Master..."
             self.active_chat_history = self.lore_chat_history
             self.page.run_task(self.initialize_lore_master)
         else:
             self.user_input.hint_text = "Ask the Rules Lawyer..."
             self.active_chat_history = self.rules_chat_history
-            self.page.run_task(self.initialize_rules_lawyer)
+            if not self.gemini_srd_file:
+                self.page.run_task(self.initialize_rules_lawyer)
         self.update()
 
     async def initialize_lore_master(self):
@@ -216,46 +217,35 @@ class MainView(ft.View):
         self.update()
 
     async def initialize_rules_lawyer(self):
-        """Loads the SRD document and prepares it for Gemini, if not already loaded or retrieved."""
+        """
+        Loads the permanent SRD file from Gemini using the ID from the application config.
+        """
         self.rules_chat_history.controls.clear()
-        self.rules_chat_history.controls.append(ft.Text("Loading SRD document...", italic=True))
+        self.rules_chat_history.controls.append(ft.Text("Initializing Rules Lawyer...", italic=True))
         self.update()
 
-        gemini_srd_file_name = await asyncio.to_thread(self.page.client_storage.get, "gemini_srd_file_name")
-
-        if gemini_srd_file_name:
-            print(f"Attempting to retrieve Gemini SRD file '{gemini_srd_file_name}' from Gemini API...")
-            self.gemini_srd_file = await self.gemini_service.get_gemini_file_by_name(gemini_srd_file_name)
-
-        if self.gemini_srd_file:
+        if not GEMINI_SRD_FILE_NAME:
             self.rules_chat_history.controls.clear()
-            self.rules_chat_history.controls.append(ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN_700))
-        else:
-            srd_bucket_path = await asyncio.to_thread(self.page.client_storage.get, "srd_document_bucket_path")
-            if not srd_bucket_path:
+            self.rules_chat_history.controls.append(ft.Text("SRD document is not configured.", color=ft.Colors.RED))
+            self.update()
+            return
+
+        try:
+            print(f"--- Fetching SRD file from Gemini API using permanent name: {GEMINI_SRD_FILE_NAME} ---")
+            self.gemini_srd_file = await self.gemini_service.get_gemini_file_by_name(GEMINI_SRD_FILE_NAME)
+
+            if self.gemini_srd_file:
                 self.rules_chat_history.controls.clear()
                 self.rules_chat_history.controls.append(
-                    ft.Text("No SRD document uploaded in Settings.", color=ft.Colors.ORANGE))
-                self.update()
-                return
-
-            print(f"SRD file not found in Gemini, attempting to upload from Supabase path: {srd_bucket_path}")
-            uploaded_file_name = await self.gemini_service.upload_srd_to_gemini(srd_bucket_path)
-
-            if uploaded_file_name:
-                await asyncio.to_thread(self.page.client_storage.set, "gemini_srd_file_name", uploaded_file_name)
-                self.gemini_srd_file = await self.gemini_service.get_gemini_file_by_name(uploaded_file_name)
-
-                if self.gemini_srd_file:
-                    self.rules_chat_history.controls.clear()
-                    self.rules_chat_history.controls.append(
-                        ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN_700))
-                else:
-                    self.rules_chat_history.controls.clear()
-                    self.rules_chat_history.controls.append(ft.Text("Failed to retrieve SRD document from Gemini after upload.", color=ft.Colors.RED))
+                    ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN))
             else:
-                self.rules_chat_history.controls.clear()
-                self.rules_chat_history.controls.append(ft.Text("Failed to upload SRD document to Gemini.", color=ft.Colors.RED))
+                raise Exception("Could not retrieve SRD file from Gemini. Check permissions or file name in config.")
+
+        except Exception as e:
+            self.rules_chat_history.controls.clear()
+            self.rules_chat_history.controls.append(
+                ft.Text(f"Error initializing Rules Lawyer: {e}", color=ft.Colors.RED))
+
         self.update()
 
     async def send_message_click(self, e):
@@ -276,16 +266,18 @@ class MainView(ft.View):
         try:
             model_name = await asyncio.to_thread(self.page.client_storage.get, "ai.model") or DEFAULT_TEXT_MODEL
             selected_tab = self.main_content.selected_index
-            response_text = ""
-            if selected_tab == 0: # Lore Master
+
+            if selected_tab == 0:  # Lore Master
                 if self.lore_chat_session:
                     response = await asyncio.to_thread(self.lore_chat_session.send_message, user_text)
                     response_text = response.text
                 else:
-                    response_text = "Error: Lore Master session not initialized."
-            else: # Rules Lawyer
+                    response_text = "Error: Lore Master session not initialized. Select a world and campaign in Settings."
+            else:  # Rules Lawyer
                 if self.gemini_srd_file:
-                    srd_prompt = await asyncio.to_thread(self.page.client_storage.get, "prompt.rules_lawyer") or SRD_QUERY_PROMPT
+                    srd_prompt = await asyncio.to_thread(self.page.client_storage.get,
+                                                         "prompt.rules_lawyer") or SRD_QUERY_PROMPT
+                    # The service needs the actual file object, not just the name
                     response_text = await self.gemini_service.query_srd_file(
                         question=user_text,
                         srd_file=self.gemini_srd_file,
@@ -293,7 +285,7 @@ class MainView(ft.View):
                         model_name=model_name
                     )
                 else:
-                    response_text = "Error: SRD document not ready."
+                    response_text = "Error: SRD document not ready. Please check the application configuration."
 
             self.active_chat_history.controls.append(
                 ft.Row([ft.Icon(ft.Icons.SMART_TOY),
