@@ -1,4 +1,4 @@
-# pyproject.toml
+# pyproject.toml (Corrected and Consolidated)
 
 [project]
 name = "dnd_ai_toolkit"
@@ -7,7 +7,6 @@ description = "An intelligent Campaign Co-Pilot for Dungeons & Dragons Dungeon M
 authors = [
     { name = "YOUR_NAME", email = "your@email.com" },
 ]
-# Ensure this matches your requirements.txt, but only include direct dependencies.
 dependencies = [
     "flet>=0.23.2",
     "supabase>=2.5.0",
@@ -23,3 +22,5 @@ path = "src/main.py"
 
 # Add a path to your assets directory so icons are included.
 assets_dir = "src/assets"
+
+module-name = "src/main.py"
