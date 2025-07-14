@@ -180,8 +180,7 @@ class SettingsView(ft.View):
         self.page.theme_mode = settings_to_save["app.theme_mode"]
         self.page.theme = ft.Theme(color_scheme_seed=settings_to_save["app.theme_color"])
 
-        self.page.snack_bar = ft.SnackBar(ft.Text("Settings saved!"), bgcolor=ft.Colors.GREEN)
-        self.page.snack_bar.open = True
+        self.page.open(ft.SnackBar(ft.Text("Settings saved!"), bgcolor=ft.Colors.GREEN))
         self.page.update()
 
     async def world_changed(self, e):
