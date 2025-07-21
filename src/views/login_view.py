@@ -57,14 +57,25 @@ class LoginView(ft.View):
             return
 
         try:
-            session = await supabase.client.auth.sign_in_with_password({
+            session_response = await supabase.client.auth.sign_in_with_password({
                 "email": email,
                 "password": password
             })
 
+            # --- START: Diagnostic Print Statements ---
+            print("--- Login Successful from Supabase ---")
+            # 1. Print the raw session object to see its structure
+            print(f"Session object received: {session_response}")
+
             # Save session to client storage for persistence
-            session_json = session.model_dump_json()
+            session_json = session_response.model_dump_json()
+            # 2. Print the JSON string that will be stored
+            print(f"Serialized session JSON to be stored: {session_json}")
+
             await asyncio.to_thread(self.page.client_storage.set, "supabase.session", session_json)
+            # 3. Confirm the save operation was called
+            print("--- Session JSON has been sent to client storage. ---")
+            # --- END: Diagnostic Print Statements ---
 
             self.status_text.value = ""
             self.page.go("/")
@@ -85,7 +96,7 @@ class LoginView(ft.View):
             return
 
         try:
-            session = await supabase.client.auth.sign_up({
+            await supabase.client.auth.sign_up({
                 "email": email,
                 "password": password
             })

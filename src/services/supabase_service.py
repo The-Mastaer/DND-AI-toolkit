@@ -113,9 +113,8 @@ class SupabaseService:
             raise Exception("Supabase client not initialized.")
         print(f"--- Fetching world and campaign context for campaign ID: {campaign_id} ---")
         try:
-            # The 'campaigns' table has a 'world_id' foreign key. We can join them.
-            # The syntax `worlds(*)` tells Supabase to fetch all columns from the related 'worlds' table.
-            response = await self.client.from_('campaigns').select("*, worlds(*)").eq('id', campaign_id).single().execute()
+            response = await self.client.from_('campaigns').select("*, worlds(*)").eq('id',
+                                                                                      campaign_id).single().execute()
             if response.data:
                 return response.data
             return {}
@@ -123,6 +122,60 @@ class SupabaseService:
             print(f"--- ERROR fetching world/campaign context: {e} ---")
             return {}
 
+    # --- START: Added/Restored Character Methods ---
+
+    async def get_characters_for_campaign(self, campaign_id: int, character_type: str):
+        """
+        Fetches all characters (PC or NPC) for a given campaign.
+        """
+        if not self.client:
+            raise Exception("Supabase client not initialized.")
+
+        response = await self.client.from_("characters").select("*").eq("campaign_id", campaign_id).eq("character_type",
+                                                                                                       character_type).execute()
+        return response
+
+    async def get_character_by_id(self, character_id: int):
+        """
+        Fetches a single character by their ID.
+        """
+        if not self.client:
+            raise Exception("Supabase client not initialized.")
+
+        response = await self.client.from_("characters").select("*").eq("id", character_id).single().execute()
+        return response
+
+    async def create_character(self, character_data: dict):
+        """
+        Creates a new character.
+        """
+        if not self.client:
+            raise Exception("Supabase client not initialized.")
+
+        response = await self.client.from_("characters").insert(character_data).execute()
+        return response
+
+    async def update_character(self, character_id: int, character_data: dict):
+        """
+        Updates an existing character.
+        """
+        if not self.client:
+            raise Exception("Supabase client not initialized.")
+
+        response = await self.client.from_("characters").update(character_data).eq("id", character_id).execute()
+        return response
+
+    async def delete_character(self, character_id: int):
+        """
+        Deletes a character by its ID.
+        """
+        if not self.client:
+            raise Exception("Supabase client not initialized.")
+
+        response = await self.client.from_("characters").delete().eq("id", character_id).execute()
+        return response
+
+    # --- END: Added/Restored Character Methods ---
 
     async def upload_file(self, bucket_name: str, file_path: str, file_content: bytes) -> dict:
         """

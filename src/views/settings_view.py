@@ -4,6 +4,11 @@ import flet as ft
 from services.supabase_service import supabase
 from services.gemini_service import GeminiService
 from config import THEME_COLORS, TEXT_MODELS, DEFAULT_TEXT_MODEL, IMAGE_MODELS, DEFAULT_IMAGE_MODEL
+from prompts import (
+    GENERATE_LORE_PROMPT, TRANSLATE_LORE_PROMPT, LORE_KEEPER_PROMPT,
+    SRD_QUERY_PROMPT, GENERATE_NPC_PROMPT, GENERATE_PORTRAIT_PROMPT,
+    GENERATE_ATTRIBUTES_PROMPT
+)
 import asyncio
 
 
@@ -14,13 +19,6 @@ class SettingsView(ft.View):
     """
 
     def __init__(self, page: ft.Page, gemini_service: GeminiService):
-        """
-        Initializes the SettingsView.
-
-        Args:
-            page (ft.Page): The Flet page object.
-            gemini_service (GeminiService): The singleton instance of the Gemini service.
-        """
         super().__init__()
         self.page = page
         self.route = "/settings"
@@ -34,7 +32,8 @@ class SettingsView(ft.View):
         )
 
         # --- UI Controls ---
-        # Appearance Card
+
+        # **FIX:** Restored the missing UI control definitions for this card.
         self.theme_mode_switch = ft.Switch(label="Dark Mode")
         self.theme_color_dropdown = ft.Dropdown(
             label="Theme Color",
@@ -52,11 +51,9 @@ class SettingsView(ft.View):
             )
         )
 
-        # Active Selections Card
+        # **FIX:** Restored the missing UI control definitions for this card.
         self.worlds_dropdown = ft.Dropdown(label="Active World", on_change=self.world_changed, expand=True)
-        # Campaigns dropdown will now show all campaigns for the selected world, regardless of language
         self.campaigns_dropdown = ft.Dropdown(label="Active Campaign", expand=True)
-        # New language dropdown to set the active language for content display
         self.language_dropdown = ft.Dropdown(
             label="Content Language",
             options=[
@@ -65,19 +62,17 @@ class SettingsView(ft.View):
                 ft.dropdown.Option("de", "German"),
                 ft.dropdown.Option("fr", "French"),
                 ft.dropdown.Option("cs", "Czech"),
-                # Add more languages as needed
             ],
             expand=True,
-            on_change=self.language_changed  # Add on_change handler
+            on_change=self.language_changed
         )
-
         selections_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
                     ft.ListTile(leading=ft.Icon(ft.Icons.PUBLIC), title=ft.Text("Active Selections")),
                     self.worlds_dropdown,
                     self.campaigns_dropdown,
-                    self.language_dropdown,  # Add the new language dropdown
+                    self.language_dropdown,
                 ]),
                 padding=16
             )
@@ -85,31 +80,39 @@ class SettingsView(ft.View):
 
         # AI Configuration Card
         self.model_dropdown = ft.Dropdown(
-            label="AI Model (Text)",  # Clarify label
-            # DEBUG FIX: Use the TEXT_MODELS dictionary from config
+            label="AI Model (Text)",
             options=[ft.dropdown.Option(key, text) for key, text in TEXT_MODELS.items()],
             expand=True
         )
         self.model_dropdown_pic = ft.Dropdown(
-            label="AI Model (Image)",  # Clarify label
-            # DEBUG FIX: Use the TEXT_MODELS dictionary from config
+            label="AI Model (Image)",
             options=[ft.dropdown.Option(key, text) for key, text in IMAGE_MODELS.items()],
             expand=True
         )
-        self.rules_lawyer_prompt_field = ft.TextField(
-            label="Rules Lawyer System Prompt",
-            multiline=True,
-            min_lines=3
-        )
+        self.rules_lawyer_prompt_field = ft.TextField(label="Rules Lawyer System Prompt", multiline=True, min_lines=3,
+                                                      hint_text=SRD_QUERY_PROMPT)
+        self.lore_keeper_prompt_field = ft.TextField(label="Lore Keeper System Prompt", multiline=True, min_lines=3,
+                                                     hint_text=LORE_KEEPER_PROMPT)
+        self.generate_npc_prompt_field = ft.TextField(label="Generate NPC Prompt", multiline=True, min_lines=3,
+                                                      hint_text=GENERATE_NPC_PROMPT)
+        self.generate_portrait_prompt_field = ft.TextField(label="Generate Portrait Prompt", multiline=True,
+                                                           min_lines=3, hint_text=GENERATE_PORTRAIT_PROMPT)
+        self.generate_attributes_prompt_field = ft.TextField(label="Generate Attributes Prompt", multiline=True,
+                                                             min_lines=3, hint_text=GENERATE_ATTRIBUTES_PROMPT)
 
-        self.upload_status = ft.Text(size=12)
         ai_config_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
                     ft.ListTile(leading=ft.Icon(ft.Icons.SMART_TOY), title=ft.Text("AI Configuration")),
                     self.model_dropdown,
                     self.model_dropdown_pic,
+                    ft.Divider(),
+                    ft.Text("Prompt Engineering", style=ft.TextThemeStyle.TITLE_MEDIUM),
                     self.rules_lawyer_prompt_field,
+                    self.lore_keeper_prompt_field,
+                    self.generate_npc_prompt_field,
+                    self.generate_portrait_prompt_field,
+                    self.generate_attributes_prompt_field,
                 ]),
                 padding=16
             )
@@ -126,7 +129,7 @@ class SettingsView(ft.View):
                     ft.Row([self.save_button], alignment=ft.MainAxisAlignment.END)
                 ],
                 spacing=20,
-                width=600,
+                width=800,
                 alignment=ft.MainAxisAlignment.START,
                 scroll=ft.ScrollMode.ADAPTIVE
             )
@@ -135,12 +138,10 @@ class SettingsView(ft.View):
         self.scroll = ft.ScrollMode.ADAPTIVE
 
     def did_mount(self):
-        """Load initial settings when the view is displayed."""
         self.page.run_task(self.load_settings)
 
     async def load_settings(self):
         """Fetches and applies saved settings from client storage and the database."""
-        # Define keys and their default values
         settings_map = {
             "app.theme_mode": (self.theme_mode_switch, "value", "dark"),
             "app.theme_color": (self.theme_color_dropdown, "value", "blue"),
@@ -148,36 +149,37 @@ class SettingsView(ft.View):
             "picture.model": (self.model_dropdown_pic, "value", DEFAULT_IMAGE_MODEL),
             "active_world_id": (self.worlds_dropdown, "value", None),
             "active_campaign_id": (self.campaigns_dropdown, "value", None),
-            "active_content_language": (self.language_dropdown, "value", "en"),  # New setting for content language
+            "active_content_language": (self.language_dropdown, "value", "en"),
+            "prompt.rules_lawyer": (self.rules_lawyer_prompt_field, "value", ""),
+            "prompt.lore_keeper": (self.lore_keeper_prompt_field, "value", ""),
+            "prompt.generate_npc": (self.generate_npc_prompt_field, "value", ""),
+            "prompt.generate_portrait": (self.generate_portrait_prompt_field, "value", ""),
+            "prompt.generate_attributes": (self.generate_attributes_prompt_field, "value", ""),
         }
 
-        # Fetch all settings from client storage
         keys = list(settings_map.keys())
         tasks = [asyncio.to_thread(self.page.client_storage.get, key) for key in keys]
         results = await asyncio.gather(*tasks)
         stored_settings = dict(zip(keys, results))
 
-        # Apply settings to controls
         for key, (control, prop, default) in settings_map.items():
-            value = stored_settings.get(key) or default
+            value = stored_settings.get(key, default)
+
             if key == "app.theme_mode":
                 setattr(control, prop, value == "dark")
-            elif value is not None:
-                # Convert ID values to int if they are not None, otherwise keep as is
-                if 'id' in key and value is not None:
-                    setattr(control, prop, int(value))
-                else:
-                    setattr(control, prop, value)
+            elif 'id' in key and value is not None:
+                setattr(control, prop, int(value))
+            else:
+                setattr(control, prop, value)
 
         # Load worlds dropdown
         try:
             worlds_response = await supabase.get_all_worlds()
             if worlds_response.data:
                 self.worlds_dropdown.options = [ft.dropdown.Option(w['id'], w['name']) for w in worlds_response.data]
-                # Ensure the selected world is still in the options
-                if self.worlds_dropdown.value not in [opt.key for opt in self.worlds_dropdown.options]:
-                    self.worlds_dropdown.value = None  # Clear if not valid
-
+                if self.worlds_dropdown.value and self.worlds_dropdown.value not in [opt.key for opt in
+                                                                                     self.worlds_dropdown.options]:
+                    self.worlds_dropdown.value = None
                 if self.worlds_dropdown.value:
                     await self.load_campaigns_for_world(int(self.worlds_dropdown.value))
         except Exception as e:
@@ -192,17 +194,20 @@ class SettingsView(ft.View):
             "app.theme_color": self.theme_color_dropdown.value,
             "ai.model": self.model_dropdown.value,
             "picture_model": self.model_dropdown_pic.value,
-            "prompt.rules_lawyer": self.rules_lawyer_prompt_field.value,
             "active_world_id": self.worlds_dropdown.value,
             "active_campaign_id": self.campaigns_dropdown.value,
-            "active_content_language": self.language_dropdown.value,  # Save the new language setting
+            "active_content_language": self.language_dropdown.value,
+            "prompt.rules_lawyer": self.rules_lawyer_prompt_field.value,
+            "prompt.lore_keeper": self.lore_keeper_prompt_field.value,
+            "prompt.generate_npc": self.generate_npc_prompt_field.value,
+            "prompt.generate_portrait": self.generate_portrait_prompt_field.value,
+            "prompt.generate_attributes": self.generate_attributes_prompt_field.value,
         }
 
         tasks = [asyncio.to_thread(self.page.client_storage.set, key, value) for key, value in settings_to_save.items()
                  if value is not None]
         await asyncio.gather(*tasks)
 
-        # Apply theme changes immediately
         self.page.theme_mode = settings_to_save["app.theme_mode"]
         self.page.theme = ft.Theme(color_scheme_seed=settings_to_save["app.theme_color"])
 
@@ -210,42 +215,31 @@ class SettingsView(ft.View):
         self.page.update()
 
     async def world_changed(self, e):
-        """Handles active world change."""
         world_id = int(e.control.value)
-        # Clear active campaign when world changes
         self.campaigns_dropdown.value = None
         await self.load_campaigns_for_world(world_id)
         self.update()
 
     async def language_changed(self, e):
-        """Handles active content language change."""
-        # When language changes, save the setting.
-        # The actual impact on displayed content will be handled by views
-        # that read from client_storage (e.g., CharactersView).
         print(f"Language changed to: {self.language_dropdown.value}")
         await asyncio.to_thread(self.page.client_storage.set, "active_content_language", self.language_dropdown.value)
-        self.update()  # Update the page to reflect any immediate changes or ensure state is saved.
+        if self.worlds_dropdown.value:
+            await self.load_campaigns_for_world(int(self.worlds_dropdown.value))
+        self.update()
 
     async def load_campaigns_for_world(self, world_id):
-        """
-        Loads campaigns for the selected world into the dropdown.
-        This now loads ALL campaigns for the world, regardless of language.
-        """
         try:
-            # The get_campaigns_for_world method in supabase_service already fetches all campaigns
-            # for a given world_id without a language filter.
             campaigns_response = await supabase.get_campaigns_for_world(world_id)
             if campaigns_response.data:
-                # Display campaign names using 'en' as a fallback if the selected language is not available
+                lang = self.language_dropdown.value or 'en'
                 self.campaigns_dropdown.options = [
-                    ft.dropdown.Option(c['id'], c['name'].get(self.language_dropdown.value, 'Unnamed Campaign'))
+                    ft.dropdown.Option(c['id'], c['name'].get(lang, c['name'].get('en', 'Unnamed Campaign')))
                     for c in campaigns_response.data
                 ]
-                # Keep existing selection if it's valid for the new world
-                active_campaign_id = await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id")
-                if active_campaign_id and any(
-                        opt.key == int(active_campaign_id) for opt in self.campaigns_dropdown.options):
-                    self.campaigns_dropdown.value = int(active_campaign_id)
+                active_campaign_id_str = await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id")
+                if active_campaign_id_str and any(
+                        opt.key == int(active_campaign_id_str) for opt in self.campaigns_dropdown.options):
+                    self.campaigns_dropdown.value = int(active_campaign_id_str)
                 else:
                     self.campaigns_dropdown.value = None
             else:
@@ -261,4 +255,3 @@ class SettingsView(ft.View):
         await supabase.client.auth.sign_out()
         await asyncio.to_thread(self.page.client_storage.remove, "supabase.session")
         self.page.go("/login")
-

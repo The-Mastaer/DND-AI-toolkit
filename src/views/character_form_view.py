@@ -2,457 +2,380 @@
 
 import flet as ft
 from services.supabase_service import supabase
-from services.gemini_service import GeminiService
-from prompts import GENERATE_NPC_PROMPT, GENERATE_PORTRAIT_PROMPT
-from config import (
-    DND_RACES, DND_CLASSES, DND_BACKGROUNDS,
-    DND_ENVIRONMENTS, DND_HOSTILITIES, DND_RARITIES,
-    DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL
-)
-from components.ui_components import create_compact_textfield, create_compact_dropdown
-import json
+from services.gemini_service import gemini_service
+from config import GEMINI_SRD_FILE_NAME, DEFAULT_TEXT_MODEL
 import asyncio
-import random
-import time
+import json
+
+# Sample data for dropdowns
+GENDERS = ["Male", "Female", "Non-binary", "Unknown"]
+RARITIES = ["Common", "Uncommon", "Rare", "Very Rare", "Legendary"]
+ATTITUDES = ["Friendly", "Neutral", "Hostile", "Indifferent"]
+RACES = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"]
+CLASSES = ["Fighter", "Wizard", "Rogue", "Cleric", "Barbarian", "Bard", "Druid", "Monk", "Paladin", "Ranger",
+           "Sorcerer", "Warlock"]
+ENVIRONMENTS = ["Urban", "Forest", "Mountain", "Dungeon", "Aquatic", "Desert", "Arctic"]
+BACKGROUNDS = ["Acolyte", "Charlatan", "Criminal", "Entertainer", "Folk Hero", "Guild Artisan", "Hermit", "Noble",
+               "Outlander", "Sage", "Sailor", "Soldier", "Urchin"]
 
 
 class CharacterFormView(ft.View):
     """
-    A full-page view for creating and editing characters, with a two-column layout
-    and integrated AI generation for both data and portraits.
+    A view for creating, editing, and generating NPC/PC characters.
     """
 
-    def __init__(self, page: ft.Page, gemini_service: GeminiService, character_id=None, campaign_id=None,
+    def __init__(self, page: ft.Page, gemini_service: gemini_service, character_id=None, campaign_id=None,
                  selected_language="en"):
-        """
-        Initializes the CharacterFormView.
-        """
         super().__init__()
         self.page = page
-        self.character_id = character_id
-        self.campaign_id = campaign_id
-        self.is_edit_mode = character_id is not None
         self.gemini_service = gemini_service
-        self.portrait_url = None
-        self.selected_language = selected_language  # Set directly from init parameter
+        self.character_id = character_id
+        # **FIX:** Removed the blocking client_storage call from the constructor.
+        # campaign_id is passed directly when creating a new character.
+        # For an existing character, we will get it from the character's data.
+        self.campaign_id = campaign_id
+        self.selected_language = selected_language
+        self.is_new_character = character_id is None
+        self.route = f"/character_edit/{character_id or f'new/{self.campaign_id}'}?lang={selected_language}"
 
-        self.file_picker = ft.FilePicker(on_result=self.on_file_picker_result)
-        self.page.overlay.append(self.file_picker)
-
-        self.route = f"/character_edit/{self.character_id}" if self.is_edit_mode else f"/character_edit/new/{self.campaign_id}"
         self.appbar = ft.AppBar(
-            title=ft.Text("Edit Character" if self.is_edit_mode else "Create New Character"),
-            leading=ft.IconButton(icon=ft.Icons.ARROW_BACK, on_click=self.go_back),
-            actions=[ft.IconButton(icon=ft.Icons.SAVE, on_click=self.save_character_click, tooltip="Save Character")],
+            title=ft.Text("New NPC" if self.is_new_character else "Edit Character"),
+            leading=ft.IconButton(icon=ft.Icons.ARROW_BACK, on_click=lambda _: self.page.go("/characters")),
             bgcolor=ft.Colors.SURFACE_CONTAINER_HIGHEST,
         )
-        self.scroll = ft.ScrollMode.ADAPTIVE
 
-        self.name_field = create_compact_textfield("Name")
-        self.appearance_field = create_compact_textfield("Appearance", multiline=True, min_lines=4)
-        self.personality_field = create_compact_textfield("Personality", multiline=True, min_lines=4)
-        self.backstory_field = create_compact_textfield("Backstory", multiline=True, min_lines=4)
-        self.plot_hooks_field = create_compact_textfield("Plot Hooks", multiline=True, min_lines=3)
-        self.roleplaying_tips_field = create_compact_textfield("Roleplaying Tips", multiline=True, min_lines=3)
+        # --- Define UI Controls ---
+        self.name_field = ft.TextField(label="Name")
+        self.appearance_field = ft.TextField(label="Appearance", multiline=True, min_lines=4, max_lines=6)
+        self.personality_field = ft.TextField(label="Personality", multiline=True, min_lines=4, max_lines=6)
+        self.backstory_field = ft.TextField(label="Backstory", multiline=True, min_lines=5, max_lines=8)
 
-        self.race_dropdown = create_compact_dropdown("Race", DND_RACES, expand=True)
-        self.class_dropdown = create_compact_dropdown("Class", DND_CLASSES, expand=True)
-        self.environment_dropdown = create_compact_dropdown("Environment", DND_ENVIRONMENTS, expand=True)
-        self.hostility_dropdown = create_compact_dropdown("Hostility", DND_HOSTILITIES, expand=True)
-        self.rarity_dropdown = create_compact_dropdown("Rarity", DND_RARITIES, expand=True)
-        self.background_dropdown = create_compact_dropdown("Background", DND_BACKGROUNDS, expand=True)
-        self.custom_prompt_field = create_compact_textfield("Custom Prompt / Instructions", multiline=True, min_lines=3)
-        self.generate_npc_button = ft.FilledButton("Generate with AI", on_click=self.generate_npc_click)
-        self.generation_progress_ring = ft.ProgressRing(width=20, height=20, stroke_width=2, visible=False)
+        self.plot_hooks_field = ft.TextField(label="Plot Hooks", multiline=True, min_lines=5, max_lines=10)
+        self.roleplaying_tips_field = ft.TextField(label="Roleplaying Tips", multiline=True, min_lines=5, max_lines=10)
+        self.notes_field = ft.TextField(label="DM Notes", multiline=True, min_lines=5, max_lines=10)
 
-        self.portrait_placeholder = ft.Container(
-            content=ft.Icon(ft.Icons.PORTRAIT, size=64),
-            alignment=ft.alignment.center,
-            width=256,
-            height=256,
-            border=ft.border.all(1, ft.Colors.OUTLINE),
-            border_radius=5,
-        )
-        self.portrait_image = ft.Image(
-            src=None,
-            width=256,
-            height=256,
-            fit=ft.ImageFit.COVER,
-            border_radius=5,
-        )
-        self.portrait_display = ft.Container(
-            content=self.portrait_placeholder,
-            alignment=ft.alignment.center
-        )
+        self.level_field = ft.TextField(label="Level", read_only=True, width=100)
+        self.hp_field = ft.TextField(label="HP", read_only=True, width=100)
+        self.ac_field = ft.TextField(label="AC", read_only=True, width=100)
+        self.attributes_field = ft.TextField(label="Attributes & Abilities", multiline=True, min_lines=10,
+                                             read_only=True)
 
-        self.include_campaign_context_checkbox = ft.Checkbox(
-            label="Include Campaign Context",
-            value=True,
-            tooltip="If checked, generation will use campaign lore for more specific details."
-        )
+        self.portrait_image = ft.Image(src="/images/placeholder.png", width=256, height=256, fit=ft.ImageFit.COVER,
+                                       border_radius=10)
+        self.generate_portrait_button = ft.ElevatedButton("Generate Portrait", icon=ft.Icons.AUTO_AWESOME,
+                                                          on_click=self.generate_portrait_clicked)
+        self.portrait_loading_indicator = ft.ProgressRing(visible=False)
 
-        self.upload_portrait_button = ft.ElevatedButton("Upload Portrait", on_click=self.upload_portrait_click)
-        self.generate_portrait_button = ft.FilledButton("Generate Portrait", on_click=self.generate_portrait_click)
-        self.portrait_progress_ring = ft.ProgressRing(width=20, height=20, stroke_width=2, visible=False)
+        self.gender_dropdown = ft.Dropdown(label="Gender", options=[ft.dropdown.Option(g) for g in GENDERS])
+        self.rarity_dropdown = ft.Dropdown(label="Rarity", options=[ft.dropdown.Option(r) for r in RARITIES])
+        self.attitude_dropdown = ft.Dropdown(label="Attitude", options=[ft.dropdown.Option(a) for a in ATTITUDES])
+        self.race_dropdown = ft.Dropdown(label="Race", options=[ft.dropdown.Option(r) for r in RACES])
+        self.class_dropdown = ft.Dropdown(label="Class", options=[ft.dropdown.Option(c) for c in CLASSES])
+        self.environment_dropdown = ft.Dropdown(label="Environment",
+                                                options=[ft.dropdown.Option(e) for e in ENVIRONMENTS])
+        self.background_dropdown = ft.Dropdown(label="Background", options=[ft.dropdown.Option(b) for b in BACKGROUNDS])
+        self.custom_prompt_field = ft.TextField(label="Custom Prompt", multiline=True)
+        self.generate_npc_button = ft.ElevatedButton("Generate with AI", icon=ft.Icons.AUTO_AWESOME,
+                                                     on_click=self.generate_npc_clicked)
+        self.npc_loading_indicator = ft.ProgressBar(visible=False)
 
+        self.generate_stats_button = ft.ElevatedButton("Generate Stats with AI", icon=ft.Icons.CASINO,
+                                                       on_click=self.generate_stats_clicked,
+                                                       tooltip="Generates Level, HP, AC, and attributes based on Class and Rarity using the SRD.")
+
+        self.save_button = ft.FilledButton("Save NPC in Workshop", icon=ft.Icons.SAVE,
+                                           on_click=self.save_character_clicked)
+        self.save_loading_indicator = ft.ProgressRing(visible=False)
+
+        # --- Layout ---
         self.controls = [
             ft.Row(
-                controls=[
+                [
                     ft.Column(
-                        controls=[
+                        [
                             self.name_field,
                             self.appearance_field,
                             self.personality_field,
                             self.backstory_field,
-                            self.plot_hooks_field,
-                            self.roleplaying_tips_field,
+                            ft.Tabs(
+                                expand=True,
+                                tabs=[
+                                    ft.Tab(text="Plot Hooks", content=ft.Container(self.plot_hooks_field, padding=10)),
+                                    ft.Tab(text="Roleplaying",
+                                           content=ft.Container(self.roleplaying_tips_field, padding=10)),
+                                    ft.Tab(text="Notes", content=ft.Container(self.notes_field, padding=10)),
+                                    ft.Tab(text="Stats", content=ft.Container(
+                                        ft.Column([
+                                            ft.Row([self.level_field, self.hp_field, self.ac_field], spacing=10),
+                                            self.attributes_field
+                                        ]),
+                                        padding=10
+                                    ))
+                                ]
+                            )
                         ],
-                        spacing=10,
-                        expand=1
+                        expand=3, spacing=10
                     ),
                     ft.Column(
-                        controls=[
-                            ft.Text("AI Generation Parameters", style=ft.TextThemeStyle.TITLE_MEDIUM, size=14),
-                            ft.Row([self.race_dropdown, self.class_dropdown]),
-                            ft.Row([self.environment_dropdown, self.hostility_dropdown]),
-                            ft.Row([self.rarity_dropdown, self.background_dropdown]),
-                            self.custom_prompt_field,
-                            ft.Row([self.generate_npc_button, self.generation_progress_ring]),
-                            self.include_campaign_context_checkbox,
-                            ft.Divider(),
-                            ft.Text("Character Portrait", style=ft.TextThemeStyle.TITLE_MEDIUM, size=14),
-                            self.portrait_display,
-                            ft.Row(
-                                [
-                                    self.upload_portrait_button,
-                                    self.generate_portrait_button,
-                                    self.portrait_progress_ring
-                                ],
-                                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+                        [
+                            ft.Tabs(
+                                expand=True,
+                                tabs=[
+                                    ft.Tab(text="Portrait", content=ft.Container(ft.Column([
+                                        ft.Container(self.portrait_image, alignment=ft.alignment.center),
+                                        ft.Row([self.generate_portrait_button, self.portrait_loading_indicator],
+                                               alignment=ft.MainAxisAlignment.CENTER)
+                                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER), padding=10)),
+                                    ft.Tab(text="NPC Workshop", content=ft.Container(ft.Column([
+                                        ft.Row([self.gender_dropdown, self.attitude_dropdown]),
+                                        ft.Row([self.rarity_dropdown, self.environment_dropdown]),
+                                        ft.Row([self.race_dropdown, self.class_dropdown]),
+                                        self.background_dropdown,
+                                        self.custom_prompt_field,
+                                        ft.Row([self.generate_npc_button, self.npc_loading_indicator]),
+                                        ft.Divider(),
+                                        ft.Row([self.generate_stats_button])
+                                    ], scroll=ft.ScrollMode.ADAPTIVE), padding=10, alignment=ft.alignment.top_center))
+                                ]
                             ),
+                            ft.Row([self.save_button, self.save_loading_indicator], alignment=ft.MainAxisAlignment.END),
                         ],
-                        spacing=10,
-                        expand=1
+                        expand=2, spacing=10
                     )
                 ],
-                spacing=20,
-                vertical_alignment=ft.CrossAxisAlignment.START
+                expand=True, spacing=20
             )
         ]
 
     def did_mount(self):
-        # The selected_language is now passed directly in the constructor from main.py
-        # No need to parse it from the route here.
-        print(f"CharacterFormView: Initialized with language: {self.selected_language}")
-
-        if self.is_edit_mode:
-            self.page.run_task(self.load_character_data)
-
-    def go_back(self, e):
-        self.page.go("/characters")
+        self.page.run_task(self.load_character_data)
 
     async def load_character_data(self):
-        try:
-            response = await supabase.client.from_('characters').select("*").eq('id',
-                                                                                self.character_id).single().execute()
-            if response.data:
-                self._populate_fields(response.data)
-                self.page.update()
-        except Exception as e:
-            self.page.open(ft.SnackBar(ft.Text(f"Error loading character: {e}"), bgcolor=ft.Colors.RED_700))
-            self.page.update()
-
-    def _populate_fields(self, data):
-        # Use the selected_language for populating fields
-        lang_code = self.selected_language
-        print(f"CharacterFormView: Populating fields with language: {lang_code}")
-
-        self.name_field.value = data.get('name', '')
-        self.appearance_field.value = data.get('appearance', {}).get(lang_code, '')
-        self.personality_field.value = data.get('personality', {}).get(lang_code, '')
-        self.backstory_field.value = data.get('backstory', {}).get(lang_code, '')
-        self.plot_hooks_field.value = data.get('plot_hooks', {}).get(lang_code, '')
-        self.roleplaying_tips_field.value = data.get('roleplaying_tips', {}).get(lang_code, '')
-
-        self.race_dropdown.value = data.get('race')
-        self.class_dropdown.value = data.get('class')
-        self.background_dropdown.value = data.get('background')
-        self.environment_dropdown.value = data.get('environment')
-        self.hostility_dropdown.value = data.get('hostility')
-        self.rarity_dropdown.value = data.get('rarity')
-        self.custom_prompt_field.value = data.get('custom_prompt', '')
-
-        self.portrait_url = data.get('portrait_url')
-        if self.portrait_url:
-            self.portrait_image.src = self.portrait_url
-            self.portrait_display.content = self.portrait_image
-        else:
-            self.portrait_display.content = self.portrait_placeholder
-
-    def save_character_click(self, e):
-        self.page.run_task(self._save_character)
-
-    async def _save_character(self):
-        if not self.name_field.value:
-            self.name_field.error_text = "Name is required."
-            self.page.update()
+        if self.is_new_character:
+            print("--- Opening form for new character. ---")
+            if not self.campaign_id:
+                # Fallback to get campaign_id from storage if it wasn't in the route for some reason
+                self.campaign_id = int(await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id"))
             return
 
-        self.name_field.error_text = ""
-        # Use the selected_language for saving fields
-        lang_code = self.selected_language
-        print(f"CharacterFormView: Saving character with language: {lang_code}")
-
-        # Fetch existing data if in edit mode to merge JSONB fields
-        existing_character_data = {}
-        if self.is_edit_mode:
-            try:
-                response = await supabase.client.from_('characters').select("*").eq('id',
-                                                                                    self.character_id).single().execute()
-                if response.data:
-                    existing_character_data = response.data
-            except Exception as e:
-                print(f"Error fetching existing character data for merge: {e}")
-                # Continue with saving, but without merging old translations if fetch fails
-
-        # Helper to update JSONB fields, preserving other language translations
-        def update_jsonb_field(field_name, new_value):
-            existing_jsonb = existing_character_data.get(field_name, {})
-            existing_jsonb[lang_code] = new_value or ""
-            return existing_jsonb
-
-        character_data_to_save = {
-            "name": self.name_field.value,
-            "character_type": "NPC",  # Assuming default to NPC for now, adjust if PC is needed
-            "portrait_url": self.portrait_url,
-            "appearance": update_jsonb_field("appearance", self.appearance_field.value),
-            "personality": update_jsonb_field("personality", self.personality_field.value),
-            "backstory": update_jsonb_field("backstory", self.backstory_field.value),
-            "plot_hooks": update_jsonb_field("plot_hooks", self.plot_hooks_field.value),
-            "roleplaying_tips": update_jsonb_field("roleplaying_tips", self.roleplaying_tips_field.value),
-            "notes": update_jsonb_field("notes", existing_character_data.get("notes", {}).get(lang_code, "")),
-            # Preserve notes if they exist
-            "attributes": existing_character_data.get("attributes", {}),  # Preserve attributes
-            "tags": existing_character_data.get("tags", []),  # Preserve tags
-            "race": self.race_dropdown.value,
-            "class": self.class_dropdown.value,
-            "background": self.background_dropdown.value,
-            "environment": self.environment_dropdown.value,
-            "hostility": self.hostility_dropdown.value,
-            "rarity": self.rarity_dropdown.value,
-            "custom_prompt": self.custom_prompt_field.value or "",
-        }
-
+        print(f"--- Loading data for character ID: {self.character_id} ---")
         try:
-            if self.is_edit_mode:
-                await supabase.client.from_('characters').update(character_data_to_save).eq('id',
-                                                                                            self.character_id).execute()
-                message = "Character updated!"
+            response = await supabase.get_character_by_id(self.character_id)
+            if response.data:
+                character = response.data
+
+                # **FIX:** Set the instance's campaign_id from the loaded character data
+                self.campaign_id = character.get('campaign_id')
+
+                def get_text(field, lang='en', default=''):
+                    if isinstance(field, dict):
+                        return field.get(lang, field.get('en', default))
+                    return field if field is not None else default
+
+                self.name_field.value = get_text(character.get('name'))
+                self.appearance_field.value = get_text(character.get('appearance'), self.selected_language)
+                self.personality_field.value = get_text(character.get('personality'), self.selected_language)
+                self.backstory_field.value = get_text(character.get('backstory'), self.selected_language)
+                self.plot_hooks_field.value = get_text(character.get('plot_hooks'), self.selected_language)
+                self.roleplaying_tips_field.value = get_text(character.get('roleplaying_tips'), self.selected_language)
+                self.notes_field.value = get_text(character.get('notes'), self.selected_language)
+
+                attributes = character.get('attributes') or {}
+                if isinstance(attributes, dict):
+                    self.level_field.value = str(attributes.get('level', ''))
+                    self.hp_field.value = str(attributes.get('hp', ''))
+                    self.ac_field.value = str(attributes.get('ac', ''))
+                    self.attributes_field.value = json.dumps(attributes, indent=2)
+
+                self.portrait_image.src = character.get('portrait_url') or "/images/placeholder.png"
+
+                print(f"--- Populating dropdowns from dedicated columns ---")
+                self.gender_dropdown.value = character.get('gender')
+                self.rarity_dropdown.value = character.get('rarity')
+                self.attitude_dropdown.value = character.get('hostility')
+                self.race_dropdown.value = character.get('race')
+                self.class_dropdown.value = character.get('class')
+                self.environment_dropdown.value = character.get('environment')
+                self.background_dropdown.value = character.get('background')
+                self.custom_prompt_field.value = get_text(character.get('custom_prompt'))
+
+                print("--- Character data loaded into form. ---")
+                self.update()
             else:
-                if not self.campaign_id:
-                    raise Exception("Campaign ID is missing for new character.")
-                character_data_to_save["campaign_id"] = self.campaign_id
-                await supabase.client.from_('characters').insert(character_data_to_save).execute()
-                message = "Character created!"
+                self.page.open(ft.SnackBar(ft.Text("Character not found."), bgcolor=ft.Colors.RED))
+        except Exception as e:
+            print(f"Error loading character data: {e}")
+            self.page.open(ft.SnackBar(ft.Text(f"Error: {e}"), bgcolor=ft.Colors.RED))
 
-            self.page.open(ft.SnackBar(ft.Text(message), bgcolor=ft.Colors.GREEN_700))
-            self.page.update()
-        except Exception as ex:
-            self.page.open(ft.SnackBar(ft.Text(f"Error saving: {ex}"), bgcolor=ft.Colors.RED_700))
-            self.page.update()
-
-    def generate_npc_click(self, e):
-        self.page.run_task(self._generate_npc)
-
-    async def _generate_npc(self):
-        self.generation_progress_ring.visible = True
+    async def generate_npc_clicked(self, e):
+        print("--- 'Generate with AI' button clicked. ---")
+        self.npc_loading_indicator.visible = True
         self.generate_npc_button.disabled = True
-        self.page.update()
-
-        def get_choice(dropdown, choices):
-            return random.choice(choices) if dropdown.value == "Random" else dropdown.value
+        self.update()
 
         try:
             model_name = await asyncio.to_thread(self.page.client_storage.get, "ai.model") or DEFAULT_TEXT_MODEL
 
-            world_context, campaign_context = await self._fetch_context_for_prompt(
-                include_campaign=self.include_campaign_context_checkbox.value
+            world_id_str = await asyncio.to_thread(self.page.client_storage.get, "active_world_id")
+            campaign_id_str = str(self.campaign_id)  # Use the instance campaign_id
+
+            if not world_id_str or not campaign_id_str:
+                self.page.open(ft.SnackBar(ft.Text("Please set your active world and campaign in Settings."),
+                                           bgcolor=ft.Colors.ORANGE))
+                return
+
+            world_id = int(world_id_str)
+            campaign_id = int(campaign_id_str)
+
+            world_resp = await supabase.get_world_details(world_id)
+            campaign_resp = await supabase.get_campaign_details(campaign_id)
+
+            world_context = world_resp.data.get('lore', {}).get(self.selected_language, "")
+
+            campaign_context = ""
+            if campaign_resp.data:
+                c = campaign_resp.data
+                campaign_context = f"Campaign Name: {c.get('name', {}).get(self.selected_language, '')}\nParty Info: {c.get('party_info', {}).get(self.selected_language, '')}\nSession History: {c.get('session_history', {}).get(self.selected_language, '')}"
+
+            prompt_params = {
+                "race": self.race_dropdown.value or "Random",
+                "char_class": self.class_dropdown.value or "Random",
+                "environment": self.environment_dropdown.value or "Random",
+                "hostility": self.attitude_dropdown.value or "Random",
+                "rarity": self.rarity_dropdown.value or "Random",
+                "background": self.background_dropdown.value or "Random",
+                "custom_prompt": self.custom_prompt_field.value or "None",
+                "target_language": "English",
+                "world_context": world_context,
+                "campaign_context": campaign_context
+            }
+
+            npc_data = await self.gemini_service.generate_npc_data(model_name=model_name, **prompt_params)
+
+            if npc_data:
+                self.name_field.value = npc_data.name
+                self.appearance_field.value = npc_data.appearance
+                self.personality_field.value = npc_data.personality
+                self.backstory_field.value = npc_data.backstory
+                self.plot_hooks_field.value = npc_data.plot_hooks
+                self.roleplaying_tips_field.value = npc_data.roleplaying_tips
+                self.page.open(ft.SnackBar(ft.Text("NPC data generated successfully!"), bgcolor=ft.Colors.GREEN))
+            else:
+                self.page.open(ft.SnackBar(ft.Text("Failed to generate NPC data from AI."), bgcolor=ft.Colors.RED))
+
+        except Exception as ex:
+            print(f"Error during NPC generation: {ex}")
+            self.page.open(ft.SnackBar(ft.Text(f"An error occurred: {ex}"), bgcolor=ft.Colors.RED))
+        finally:
+            self.npc_loading_indicator.visible = False
+            self.generate_npc_button.disabled = False
+            self.update()
+
+    async def generate_portrait_clicked(self, e):
+        print("--- 'Generate Portrait' button clicked. ---")
+        self.page.open(ft.SnackBar(ft.Text("Portrait generation is not yet implemented.")))
+        pass
+
+    async def generate_stats_clicked(self, e):
+        print("--- 'Generate Stats' button clicked. ---")
+        npc_class = self.class_dropdown.value
+        rarity = self.rarity_dropdown.value
+        if not npc_class or not rarity:
+            self.page.open(ft.SnackBar(ft.Text("Please select a Class and Rarity first."), bgcolor=ft.Colors.ORANGE))
+            return
+
+        self.generate_stats_button.disabled = True
+        self.update()
+
+        try:
+            srd_file = await self.gemini_service.get_gemini_file_by_name(GEMINI_SRD_FILE_NAME)
+            if not srd_file:
+                self.page.open(
+                    ft.SnackBar(ft.Text("SRD file not found. Check settings and ensure it has been uploaded."),
+                                bgcolor=ft.Colors.RED))
+                return
+
+            model_name = await asyncio.to_thread(self.page.client_storage.get, "ai.model") or DEFAULT_TEXT_MODEL
+
+            stats_pydantic_obj = await self.gemini_service.generate_character_attributes(
+                character_class=npc_class,
+                rarity=rarity,
+                srd_file=srd_file,
+                model_name=model_name
             )
 
-            prompt_params = {
-                "race": get_choice(self.race_dropdown, DND_RACES),
-                "char_class": get_choice(self.class_dropdown, DND_CLASSES),
-                "environment": get_choice(self.environment_dropdown, DND_ENVIRONMENTS),
-                "hostility": get_choice(self.hostility_dropdown, DND_HOSTILITIES),
-                "rarity": get_choice(self.rarity_dropdown, DND_RARITIES),
-                "background": get_choice(self.background_dropdown, DND_BACKGROUNDS),
-                "custom_prompt": self.custom_prompt_field.value or "None",
-                "world_context": world_context,
-                "campaign_context": campaign_context,
-                "target_language": self.selected_language  # Pass the selected language to the prompt
-            }
-            prompt = GENERATE_NPC_PROMPT.format(**prompt_params)
-
-            # --- DEBUGGING: Print the final prompt ---
-            print("=" * 50)
-            print("--- FINAL PROMPT SENT TO GEMINI FOR NPC GENERATION ---")
-            print(prompt)
-            print("=" * 50)
-
-            response_text = await self.gemini_service.get_text_response(prompt, model_name=model_name)
-            clean_response = response_text.strip().replace("```json", "").replace("```", "")
-            npc_data = json.loads(clean_response)
-
-            # Update fields with generated data in the selected language
-            self.name_field.value = npc_data.get("name", "")
-            self.appearance_field.value = npc_data.get("appearance", "")
-            self.personality_field.value = npc_data.get("personality", "")
-            self.backstory_field.value = npc_data.get("backstory", "")
-            self.plot_hooks_field.value = npc_data.get("plot_hooks", "")
-            self.roleplaying_tips_field.value = npc_data.get("roleplaying_tips", "")
-
-            self.race_dropdown.value = prompt_params["race"]
-            self.class_dropdown.value = prompt_params["char_class"]
-            self.background_dropdown.value = prompt_params["background"]
-            self.environment_dropdown.value = prompt_params["environment"]
-            self.hostility_dropdown.value = prompt_params["hostility"]
-            self.rarity_dropdown.value = prompt_params["rarity"]
-            self.page.open(ft.SnackBar(ft.Text("NPC data generated!"), bgcolor=ft.Colors.GREEN_700))
-        except Exception as e:
-            self.page.open(
-                ft.SnackBar(ft.Text(f"An error occurred during NPC generation: {e}"), bgcolor=ft.Colors.RED_700))
-        finally:
-            self.generation_progress_ring.visible = False
-            self.generate_npc_button.disabled = False
-            self.page.update()
-
-    def upload_portrait_click(self, e):
-        self.file_picker.pick_files(allow_multiple=False, allowed_extensions=["png", "jpg", "jpeg"])
-
-    def generate_portrait_click(self, e):
-        if not self.appearance_field.value:
-            self.page.open(ft.SnackBar(ft.Text("Please provide an appearance description first."),
-                                       bgcolor=ft.Colors.AMBER_700))
-            self.page.update()
-            return
-        self.page.run_task(self._generate_portrait_async)
-
-    async def on_file_picker_result(self, e: ft.FilePickerResultEvent):
-        if not e.files:
-            return
-        selected_file = e.files[0]
-        self.portrait_progress_ring.visible = True
-        self.upload_portrait_button.disabled = True
-        self.generate_portrait_button.disabled = True
-        self.page.update()
-        try:
-            with open(selected_file.path, "rb") as f:
-                file_bytes = f.read()
-            await self._upload_and_update_portrait(file_bytes, selected_file.name)
-        except Exception as ex:
-            self.page.open(ft.SnackBar(ft.Text(f"Error reading file: {ex}"), bgcolor=ft.Colors.RED_700))
-        finally:
-            self.portrait_progress_ring.visible = False
-            self.upload_portrait_button.disabled = False
-            self.generate_portrait_button.disabled = False
-            self.page.update()
-
-    async def _fetch_context_for_prompt(self, include_campaign=True):
-        print("\n--- DEBUG: Fetching context for prompt ---")
-        # Use self.selected_language for fetching context
-        lang_code = self.selected_language
-        world_id = await asyncio.to_thread(self.page.client_storage.get, "active_world_id")
-        print(f"DEBUG: Current World ID from storage: {world_id}")
-        print(f"DEBUG: Context language: {lang_code}")
-
-        world_context = "No world information available."
-        if world_id:
-            try:
-                world_res = await supabase.client.from_("worlds").select("lore").eq("id", world_id).single().execute()
-                if world_res.data and world_res.data.get("lore"):
-                    world_context = world_res.data["lore"].get(lang_code, world_res.data["lore"].get('en',
-                                                                                                     "Lore not available in selected language."))
-                    print(f"DEBUG: Successfully fetched World Context (first 50 chars): {world_context[:50]}...")
-                else:
-                    print("DEBUG: World lore was empty or not found in the response.")
-            except Exception as e:
-                print(f"--- DEBUG ERROR: Could not fetch world context: {e} ---")
-
-        campaign_context = "Not applicable."
-        if include_campaign:
-            campaign_id = await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id")
-            print(f"DEBUG: Current Campaign ID from storage: {campaign_id}")
-            if campaign_id:
-                try:
-                    campaign_res = await supabase.client.from_("campaigns").select("party_info, session_history").eq(
-                        "id", campaign_id).single().execute()
-                    if campaign_res.data:
-                        party = campaign_res.data.get("party_info", {}).get(lang_code,
-                                                                            campaign_res.data.get("party_info", {}).get(
-                                                                                'en', "N/A"))
-                        history = campaign_res.data.get("session_history", {}).get(lang_code, campaign_res.data.get(
-                            "session_history", {}).get('en', "N/A"))
-                        campaign_context = f"Party Information: {party}\nSession History: {history}"
-                        print(
-                            f"DEBUG: Successfully fetched Campaign Context (first 50 chars): {campaign_context[:50]}...")
-                    else:
-                        print("DEBUG: Campaign data was empty or not found in the response.")
-                except Exception as e:
-                    print(f"--- DEBUG ERROR: Could not fetch campaign context: {e} ---")
-        else:
-            print("DEBUG: Skipping campaign context fetch because checkbox is unchecked.")
-
-        return world_context, campaign_context
-
-    async def _generate_portrait_async(self):
-        self.portrait_progress_ring.visible = True
-        self.upload_portrait_button.disabled = True
-        self.generate_portrait_button.disabled = True
-        self.page.update()
-        try:
-            model_name = await asyncio.to_thread(self.page.client_storage.get, "picture.model") or DEFAULT_IMAGE_MODEL
-
-            prompt_params = {
-                "appearance": self.appearance_field.value or "A generic fantasy character.",
-                "personality": self.personality_field.value or "A neutral expression.",
-                "race": self.race_dropdown.value or "Human",
-                "char_class": self.class_dropdown.value or "Commoner",
-                "environment": self.environment_dropdown.value or "a neutral setting",
-            }
-
-            prompt = GENERATE_PORTRAIT_PROMPT.format(**prompt_params)
-
-            # --- DEBUGGING: Print the final prompt ---
-            print("=" * 50)
-            print("--- FINAL PROMPT SENT TO GEMINI FOR PORTRAIT GENERATION ---")
-            print(prompt)
-            print("=" * 50)
-
-            image_bytes = await self.gemini_service.generate_image(prompt, model_name)
-            if image_bytes:
-                await self._upload_and_update_portrait(image_bytes, "generated_portrait.png")
+            if stats_pydantic_obj:
+                stats_dict = stats_pydantic_obj.model_dump()
+                self.level_field.value = str(stats_dict.get("level", ""))
+                self.hp_field.value = str(stats_dict.get("hp", ""))
+                self.ac_field.value = str(stats_dict.get("ac", ""))
+                self.attributes_field.value = json.dumps(stats_dict, indent=2)
+                self.page.open(ft.SnackBar(ft.Text("Stats generated successfully!"), bgcolor=ft.Colors.GREEN))
             else:
-                raise Exception("AI did not return an image.")
-        except Exception as ex:
-            self.page.open(ft.SnackBar(ft.Text(f"Error generating portrait: {ex}"), bgcolor=ft.Colors.RED_700))
+                self.page.open(ft.SnackBar(ft.Text("Failed to generate stats from AI."), bgcolor=ft.Colors.RED))
         finally:
-            self.portrait_progress_ring.visible = False
-            self.upload_portrait_button.disabled = False
-            self.generate_portrait_button.disabled = False
-            self.page.update()
+            self.generate_stats_button.disabled = False
+            self.update()
 
-    async def _upload_and_update_portrait(self, file_bytes: bytes, file_name: str):
-        user = await supabase.get_user()
-        if not user: raise Exception("User not authenticated.")
-        timestamp = int(time.time())
-        storage_path = f"portraits/{user.id}/{timestamp}_{file_name}"
-        await supabase.upload_file("assets", storage_path, file_bytes)
+    async def save_character_clicked(self, e):
+        """
+        Saves the character data to the Supabase database.
+        """
+        print("--- 'Save' button clicked. ---")
+        self.save_loading_indicator.visible = True
+        self.save_button.disabled = True
+        self.update()
 
-        public_url = await supabase.get_public_url("assets", storage_path)
+        try:
+            attributes_data = {}
+            if self.attributes_field.value:
+                try:
+                    attributes_data = json.loads(self.attributes_field.value)
+                except json.JSONDecodeError:
+                    attributes_data = {"raw_text": self.attributes_field.value}
 
-        self.portrait_url = public_url
-        self.portrait_image.src = public_url
-        self.portrait_display.content = self.portrait_image
+            character_data = {
+                "name": self.name_field.value,
+                "appearance": {self.selected_language: self.appearance_field.value},
+                "personality": {self.selected_language: self.personality_field.value},
+                "backstory": {self.selected_language: self.backstory_field.value},
+                "plot_hooks": {self.selected_language: self.plot_hooks_field.value},
+                "roleplaying_tips": {self.selected_language: self.roleplaying_tips_field.value},
+                "notes": {self.selected_language: self.notes_field.value},
+                "attributes": attributes_data,
+                "gender": self.gender_dropdown.value,
+                "rarity": self.rarity_dropdown.value,
+                "hostility": self.attitude_dropdown.value,
+                "race": self.race_dropdown.value,
+                "class": self.class_dropdown.value,
+                "environment": self.environment_dropdown.value,
+                "background": self.background_dropdown.value,
+                "custom_prompt": self.custom_prompt_field.value,
+            }
 
-        self.page.open(ft.SnackBar(ft.Text("Portrait updated successfully!"), bgcolor=ft.Colors.GREEN_700))
-        self.page.update()
+            if self.is_new_character:
+                print("--- Creating new character... ---")
+                character_data["campaign_id"] = self.campaign_id
+                character_data["character_type"] = "NPC"
+                response = await supabase.create_character(character_data)
+            else:
+                print(f"--- Updating character ID: {self.character_id} ---")
+                response = await supabase.update_character(self.character_id, character_data)
+
+            # Supabase-py-async responses might not have an 'error' attribute.
+            # A successful operation returns a response where the data list is not empty.
+            if response.data:
+                self.page.open(ft.SnackBar(ft.Text("Character saved successfully!"), bgcolor=ft.Colors.GREEN))
+                await asyncio.sleep(1)
+                self.page.go("/characters")
+            else:
+                # The response object itself might contain error details
+                raise Exception(str(response))
+
+        except Exception as ex:
+            print(f"Error saving character: {ex}")
+            self.page.open(ft.SnackBar(ft.Text(f"Error saving character: {ex}"), bgcolor=ft.Colors.RED))
+        finally:
+            self.save_loading_indicator.visible = False
+            self.save_button.disabled = False
+            self.update()

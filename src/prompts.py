@@ -50,28 +50,15 @@ Answer concisely and accurately. This is a single-turn, question-and-answer inte
 """
 
 GENERATE_NPC_PROMPT = """
-You are an expert Dungeons & Dragons Dungeon Master. Your task is to generate a complete Non-Player Character (NPC) based on the provided parameters.
-Return the output as a single, clean JSON object. Do not include any text, notes, or formatting before or after the JSON object (e.g., do not wrap it in ```json ... ```).
+Act as a creative Dungeon Master's assistant. Your task is to generate a compelling D&D NPC.
+You MUST integrate specific details from the provided **World Context** and **Campaign Context** into the NPC's backstory and plot hooks to make them feel like a living part of the setting.
+For any parameter set to "Random", you must invent a suitable value.
+The generated text for all fields MUST be in {target_language}.
 
-**Critical Instruction:** You MUST integrate specific details from the provided **World Context** and **Campaign Context** (if provided) into the NPC's backstory and plot hooks. Make the character feel like a living part of this specific setting, referencing its locations, events, factions, or notable figures.
+**World Context:** {world_context}
+**Campaign Context:** {campaign_context}
 
-**JSON Schema to use for the response:**
-{{
-    "name": "string (A fantasy name appropriate for the given race)",
-    "appearance": "string (A detailed physical description of the character, 3-5 sentences)",
-    "personality": "string (Describe their traits, demeanor, and motivations, 2-3 sentences)",
-    "backstory": "string (A brief history of the character, 2-3 sentences)",
-    "plot_hooks": "string (A bulleted list of 2-3 specific, actionable plot hooks for a DM, using '*' for bullets)",
-    "roleplaying_tips": "string (Provide tips on mannerisms, voice, and attitude for the DM, 2-3 sentences)"
-}}
-
-**Output Language:** The generated JSON content for 'appearance', 'personality', 'backstory', 'plot_hooks', and 'roleplaying_tips' MUST be in {target_language}.
-
-**Background Context:**
-- **World Context:** {world_context}
-- **Campaign Context:** {campaign_context}
-
-**NPC Generation Parameters:**
+**NPC Parameters:**
 - Race: {race}
 - Class: {char_class}
 - Environment: {environment}
@@ -79,8 +66,6 @@ Return the output as a single, clean JSON object. Do not include any text, notes
 - Rarity: {rarity}
 - Background: {background}
 - Custom Instructions: {custom_prompt}
-
-Generate the NPC JSON object now.
 """
 
 GENERATE_PORTRAIT_PROMPT = """
@@ -107,4 +92,15 @@ GENERATE_PORTRAIT_PROMPT = """
 - **Do not include any text, watermarks, or signatures in the image.**
 - **Focus on the character's expression and details.**
 - **The final image must be a 1:1 square.**
+"""
+
+GENERATE_ATTRIBUTES_PROMPT = """
+Act as an expert Dungeon Master using the provided D&D SRD rules file as your sole source of truth.
+Based on the character's class '{character_class}' and rarity '{rarity}', please perform the following steps:
+1.  Determine an appropriate character level within this range: {level_range}.
+2.  Generate the character's primary stats (HP, AC) and the six main attributes (Strength, Dexterity, Constitution, Intelligence, Wisdom, Charisma), ensuring they are fitting for the chosen class and level according to the SRD.
+3.  List any relevant saving throw proficiencies.
+4.  List at least two relevant skill proficiencies.
+5.  List a few significant abilities or class features a character of this class and level would possess.
+6.  If the class is a spellcaster, list a few iconic spells they might have prepared.
 """
