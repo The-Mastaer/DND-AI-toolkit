@@ -11,6 +11,7 @@ class CharactersView(ft.View):
     A view that displays a list of characters and handles navigation
     to the character creation/editing form.
     """
+
     def __init__(self, page: ft.Page, gemini_service: GeminiService):
         """
         Initializes the CharactersView.
@@ -53,8 +54,9 @@ class CharactersView(ft.View):
         self.characters_list = ft.ListView(expand=True, spacing=10)
         self.progress_ring = ft.ProgressRing(width=32, height=32, stroke_width=4)
 
-        # State
+        # State variables to hold selected campaign and language
         self.selected_campaign_id = None
+        self.selected_language = "en"  # Default to English
 
         self.controls = [
             ft.Column(
@@ -89,12 +91,16 @@ class CharactersView(ft.View):
         self.page.run_task(self.load_initial_data)
 
     async def load_initial_data(self):
-        """Asynchronously loads the active campaign ID and then fetches the characters."""
+        """Asynchronously loads the active campaign ID and language, then fetches characters."""
         self.selected_campaign_id = await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id")
+        # Retrieve the active content language from client storage
+        self.selected_language = await asyncio.to_thread(self.page.client_storage.get,
+                                                         "active_content_language")
+        print(f"CharactersView: Loaded active_campaign_id: {self.selected_campaign_id}")
+        print(f"CharactersView: Loaded active_content_language: {self.selected_language}")
+
         self.add_character_button.disabled = self.selected_campaign_id is None
-        # Call the async method to fetch characters
         await self._get_characters()
-        # Use async update
         self.page.update()
 
     def _on_character_type_change(self, e):
@@ -134,10 +140,15 @@ class CharactersView(ft.View):
             self.characters_list.controls.clear()
             if response.data:
                 for character in response.data:
+                    # Retrieve localized appearance, falling back to English, then a default message
+                    display_appearance = character.get('appearance', {}).get(self.selected_language,
+                                                                             character.get('appearance', {}).get(self.selected_language,
+                                                                                                                 'No description.'))
+
                     self.characters_list.controls.append(
                         ft.ListTile(
                             title=ft.Text(character.get('name', 'Unnamed')),
-                            subtitle=ft.Text(character.get('appearance', {}).get('en', 'No description.'), max_lines=2,
+                            subtitle=ft.Text(display_appearance, max_lines=2,
                                              overflow=ft.TextOverflow.ELLIPSIS),
                             leading=ft.CircleAvatar(
                                 foreground_image_src=character.get('portrait_url'),
@@ -149,13 +160,13 @@ class CharactersView(ft.View):
                                 # This is the idiomatic Flet way and works correctly with async handlers.
                                 ft.PopupMenuItem(
                                     text="Edit",
-                                    data=character, # Store the whole character dict
+                                    data=character,  # Store the whole character dict
                                     on_click=self.open_edit_character_form
                                 ),
                                 ft.PopupMenuItem(
                                     text="Delete",
                                     icon=ft.Icons.DELETE,
-                                    data=character['id'], # Store just the ID
+                                    data=character['id'],  # Store just the ID
                                     on_click=self.delete_character
                                 ),
                             ]),
@@ -173,13 +184,15 @@ class CharactersView(ft.View):
         except Exception as e:
             self.characters_list.controls.clear()
             self.characters_list.controls.append(ft.Text(f"Error loading characters: {e}", color=ft.Colors.RED))
+            print(f"Error loading characters in _get_characters: {e}")  # Debugging print
 
         self.page.update()
 
     def open_new_character_form(self, e):
         """Navigates to the form to create a new character."""
         if self.selected_campaign_id:
-            self.page.go(f"/character_edit/new/{self.selected_campaign_id}")
+            # Pass the selected language to the new character form, so it knows what language to use for generation
+            self.page.go(f"/character_edit/new/{self.selected_campaign_id}?lang={self.selected_language}")
 
     # --- FIX APPLIED ---
     # The method now gets data from e.control.data
@@ -188,7 +201,8 @@ class CharactersView(ft.View):
         character_data = e.control.data
         character_id = character_data.get('id')
         if character_id:
-            self.page.go(f"/character_edit/{character_id}")
+            # Pass the selected language to the edit character form
+            self.page.go(f"/character_edit/{character_id}?lang={self.selected_language}")
 
     # --- FIX APPLIED ---
     # The method is async and gets the character_id from the event control's data attribute.
@@ -235,9 +249,10 @@ class CharactersView(ft.View):
             # After deletion, refresh the character list
             await self._get_characters()
         except Exception as e:
-            print(f"Error in _delete_character_async: {e}") # Log the full error for debugging
+            print(f"Error in _delete_character_async: {e}")  # Log the full error for debugging
             self.page.open(ft.SnackBar(
                 content=ft.Text(f"Error deleting character: {e}"),
                 bgcolor=ft.Colors.RED_700
             ))
             self.page.update()
+

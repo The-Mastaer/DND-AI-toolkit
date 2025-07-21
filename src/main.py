@@ -44,6 +44,7 @@ async def main(page: ft.Page):
         "/settings": lambda p: SettingsView(p, gemini_service),
         "/campaigns": lambda p: CampaignsView(p, gemini_service),
         "/characters": lambda p: CharactersView(p, gemini_service),
+        # CharacterFormView now explicitly accepts selected_language
         "/character_edit": lambda p, **params: CharacterFormView(p, gemini_service, **params),
     }
 
@@ -54,23 +55,36 @@ async def main(page: ft.Page):
         """
         print(f"Current route: {route.route}")
 
+        # Attempt to restore session from client storage
         saved_session_json = await asyncio.to_thread(page.client_storage.get, "supabase.session")
         if saved_session_json:
-            session_data = json.loads(saved_session_json)
             try:
-                await supabase.set_session(session_data['access_token'], session_data['refresh_token'])
+                session_data = json.loads(saved_session_json)
+                # Use the access_token and refresh_token to set the session
+                # Supabase client's set_session method expects a Session object or dict with specific keys
+                # We'll re-construct a minimal dict that mimics the session structure needed for set_session
+                session_to_restore = {
+                    "access_token": session_data.get("access_token"),
+                    "refresh_token": session_data.get("refresh_token")
+                }
+                await supabase.set_session(session_to_restore)
                 print("--- Successfully restored session from client storage. ---")
             except Exception as e:
                 print(f"--- Failed to restore session, clearing storage: {e} ---")
                 await asyncio.to_thread(page.client_storage.remove, "supabase.session")
+        else:
+            print("--- No saved session found in client storage. ---")
 
         user_session = await supabase.get_user()
 
+        # Logic for redirecting based on authentication status
         if not user_session and page.route != "/login":
+            print(f"User not authenticated. Redirecting to /login from {page.route}")
             page.go("/login")
             return
 
         if user_session and page.route == "/login":
+            print(f"User authenticated. Redirecting to / from {page.route}")
             page.go("/")
             return
 
@@ -81,19 +95,28 @@ async def main(page: ft.Page):
         page.views.append(app_views[base_route](page))
 
         # Handle other routes by parsing them and passing parameters
-        route_parts = page.route.strip("/").split("/")
+        # Split the route into path and query string
+        full_path, query_string = (page.route.split('?') + [''])[:2]  # Ensure query_string is always present
+        query_params = dict(qc.split('=') for qc in query_string.split('&')) if query_string else {}
+
+        route_parts = full_path.strip("/").split("/")
 
         current_view_key = f"/{route_parts[0]}" if route_parts[0] else "/"
 
         if current_view_key in app_views and current_view_key not in ["/", "/login"]:
             if current_view_key == "/character_edit" and len(route_parts) > 1:
-                # Handle /character_edit/:id or /character_edit/new/:campaign_id
                 char_id_or_new = route_parts[1]
+                # Extract language from query parameters, default to 'en'
+                lang = query_params.get('lang', 'en')
+
                 if char_id_or_new == 'new' and len(route_parts) > 2:
-                    campaign_id = route_parts[2]
-                    page.views.append(app_views[current_view_key](page, campaign_id=campaign_id))
+                    campaign_id = int(route_parts[2])  # Ensure campaign_id is an integer
+                    page.views.append(
+                        app_views[current_view_key](page, campaign_id=campaign_id, selected_language=lang))
                 else:
-                    page.views.append(app_views[current_view_key](page, character_id=char_id_or_new))
+                    character_id = int(char_id_or_new)  # Ensure character_id is an integer
+                    page.views.append(
+                        app_views[current_view_key](page, character_id=character_id, selected_language=lang))
             else:
                 # This is where the call to other views happens
                 page.views.append(app_views[current_view_key](page))
@@ -116,3 +139,4 @@ async def main(page: ft.Page):
 
 if __name__ == "__main__":
     ft.app(target=main, view=ft.AppView.FLET_APP)
+

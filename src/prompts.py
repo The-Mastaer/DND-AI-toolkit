@@ -65,6 +65,8 @@ Return the output as a single, clean JSON object. Do not include any text, notes
     "roleplaying_tips": "string (Provide tips on mannerisms, voice, and attitude for the DM, 2-3 sentences)"
 }}
 
+**Output Language:** The generated JSON content for 'appearance', 'personality', 'backstory', 'plot_hooks', and 'roleplaying_tips' MUST be in {target_language}.
+
 **Background Context:**
 - **World Context:** {world_context}
 - **Campaign Context:** {campaign_context}
@@ -100,8 +102,6 @@ GENERATE_PORTRAIT_PROMPT = """
 
 **Contextual Information (Use this to influence the character's gear, clothing style, and subtle details):**
 - **Environment:** The character is typically found in a {environment} environment.
-- **World Context:** {world_context}
-- **Campaign Context:** {campaign_context}
 
 **Instructions:**
 - **Do not include any text, watermarks, or signatures in the image.**

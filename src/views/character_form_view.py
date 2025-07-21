@@ -22,7 +22,8 @@ class CharacterFormView(ft.View):
     and integrated AI generation for both data and portraits.
     """
 
-    def __init__(self, page: ft.Page, gemini_service: GeminiService, character_id=None, campaign_id=None):
+    def __init__(self, page: ft.Page, gemini_service: GeminiService, character_id=None, campaign_id=None,
+                 selected_language="en"):
         """
         Initializes the CharacterFormView.
         """
@@ -33,6 +34,7 @@ class CharacterFormView(ft.View):
         self.is_edit_mode = character_id is not None
         self.gemini_service = gemini_service
         self.portrait_url = None
+        self.selected_language = selected_language  # Set directly from init parameter
 
         self.file_picker = ft.FilePicker(on_result=self.on_file_picker_result)
         self.page.overlay.append(self.file_picker)
@@ -139,6 +141,10 @@ class CharacterFormView(ft.View):
         ]
 
     def did_mount(self):
+        # The selected_language is now passed directly in the constructor from main.py
+        # No need to parse it from the route here.
+        print(f"CharacterFormView: Initialized with language: {self.selected_language}")
+
         if self.is_edit_mode:
             self.page.run_task(self.load_character_data)
 
@@ -157,7 +163,10 @@ class CharacterFormView(ft.View):
             self.page.update()
 
     def _populate_fields(self, data):
-        lang_code = 'en'
+        # Use the selected_language for populating fields
+        lang_code = self.selected_language
+        print(f"CharacterFormView: Populating fields with language: {lang_code}")
+
         self.name_field.value = data.get('name', '')
         self.appearance_field.value = data.get('appearance', {}).get(lang_code, '')
         self.personality_field.value = data.get('personality', {}).get(lang_code, '')
@@ -190,19 +199,41 @@ class CharacterFormView(ft.View):
             return
 
         self.name_field.error_text = ""
-        lang_code = 'en'
+        # Use the selected_language for saving fields
+        lang_code = self.selected_language
+        print(f"CharacterFormView: Saving character with language: {lang_code}")
+
+        # Fetch existing data if in edit mode to merge JSONB fields
+        existing_character_data = {}
+        if self.is_edit_mode:
+            try:
+                response = await supabase.client.from_('characters').select("*").eq('id',
+                                                                                    self.character_id).single().execute()
+                if response.data:
+                    existing_character_data = response.data
+            except Exception as e:
+                print(f"Error fetching existing character data for merge: {e}")
+                # Continue with saving, but without merging old translations if fetch fails
+
+        # Helper to update JSONB fields, preserving other language translations
+        def update_jsonb_field(field_name, new_value):
+            existing_jsonb = existing_character_data.get(field_name, {})
+            existing_jsonb[lang_code] = new_value or ""
+            return existing_jsonb
+
         character_data_to_save = {
             "name": self.name_field.value,
-            "character_type": "NPC",
+            "character_type": "NPC",  # Assuming default to NPC for now, adjust if PC is needed
             "portrait_url": self.portrait_url,
-            "appearance": {lang_code: self.appearance_field.value or ""},
-            "personality": {lang_code: self.personality_field.value or ""},
-            "backstory": {lang_code: self.backstory_field.value or ""},
-            "plot_hooks": {lang_code: self.plot_hooks_field.value or ""},
-            "roleplaying_tips": {lang_code: self.roleplaying_tips_field.value or ""},
-            "notes": {lang_code: ""},
-            "attributes": {},
-            "tags": [],
+            "appearance": update_jsonb_field("appearance", self.appearance_field.value),
+            "personality": update_jsonb_field("personality", self.personality_field.value),
+            "backstory": update_jsonb_field("backstory", self.backstory_field.value),
+            "plot_hooks": update_jsonb_field("plot_hooks", self.plot_hooks_field.value),
+            "roleplaying_tips": update_jsonb_field("roleplaying_tips", self.roleplaying_tips_field.value),
+            "notes": update_jsonb_field("notes", existing_character_data.get("notes", {}).get(lang_code, "")),
+            # Preserve notes if they exist
+            "attributes": existing_character_data.get("attributes", {}),  # Preserve attributes
+            "tags": existing_character_data.get("tags", []),  # Preserve tags
             "race": self.race_dropdown.value,
             "class": self.class_dropdown.value,
             "background": self.background_dropdown.value,
@@ -257,7 +288,8 @@ class CharacterFormView(ft.View):
                 "background": get_choice(self.background_dropdown, DND_BACKGROUNDS),
                 "custom_prompt": self.custom_prompt_field.value or "None",
                 "world_context": world_context,
-                "campaign_context": campaign_context
+                "campaign_context": campaign_context,
+                "target_language": self.selected_language  # Pass the selected language to the prompt
             }
             prompt = GENERATE_NPC_PROMPT.format(**prompt_params)
 
@@ -271,6 +303,7 @@ class CharacterFormView(ft.View):
             clean_response = response_text.strip().replace("```json", "").replace("```", "")
             npc_data = json.loads(clean_response)
 
+            # Update fields with generated data in the selected language
             self.name_field.value = npc_data.get("name", "")
             self.appearance_field.value = npc_data.get("appearance", "")
             self.personality_field.value = npc_data.get("personality", "")
@@ -326,16 +359,19 @@ class CharacterFormView(ft.View):
 
     async def _fetch_context_for_prompt(self, include_campaign=True):
         print("\n--- DEBUG: Fetching context for prompt ---")
-        lang_code = await asyncio.to_thread(self.page.client_storage.get, "user_language") or 'en'
+        # Use self.selected_language for fetching context
+        lang_code = self.selected_language
         world_id = await asyncio.to_thread(self.page.client_storage.get, "active_world_id")
         print(f"DEBUG: Current World ID from storage: {world_id}")
+        print(f"DEBUG: Context language: {lang_code}")
 
         world_context = "No world information available."
         if world_id:
             try:
                 world_res = await supabase.client.from_("worlds").select("lore").eq("id", world_id).single().execute()
                 if world_res.data and world_res.data.get("lore"):
-                    world_context = world_res.data["lore"].get(lang_code, "Lore not available in selected language.")
+                    world_context = world_res.data["lore"].get(lang_code, world_res.data["lore"].get('en',
+                                                                                                     "Lore not available in selected language."))
                     print(f"DEBUG: Successfully fetched World Context (first 50 chars): {world_context[:50]}...")
                 else:
                     print("DEBUG: World lore was empty or not found in the response.")
@@ -351,8 +387,11 @@ class CharacterFormView(ft.View):
                     campaign_res = await supabase.client.from_("campaigns").select("party_info, session_history").eq(
                         "id", campaign_id).single().execute()
                     if campaign_res.data:
-                        party = campaign_res.data.get("party_info", {}).get(lang_code, "N/A")
-                        history = campaign_res.data.get("session_history", {}).get(lang_code, "N/A")
+                        party = campaign_res.data.get("party_info", {}).get(lang_code,
+                                                                            campaign_res.data.get("party_info", {}).get(
+                                                                                'en', "N/A"))
+                        history = campaign_res.data.get("session_history", {}).get(lang_code, campaign_res.data.get(
+                            "session_history", {}).get('en', "N/A"))
                         campaign_context = f"Party Information: {party}\nSession History: {history}"
                         print(
                             f"DEBUG: Successfully fetched Campaign Context (first 50 chars): {campaign_context[:50]}...")
@@ -373,17 +412,12 @@ class CharacterFormView(ft.View):
         try:
             model_name = await asyncio.to_thread(self.page.client_storage.get, "picture.model") or DEFAULT_IMAGE_MODEL
 
-            include_campaign = self.include_campaign_context_checkbox.value
-            world_context, campaign_context = await self._fetch_context_for_prompt(include_campaign=include_campaign)
-
             prompt_params = {
                 "appearance": self.appearance_field.value or "A generic fantasy character.",
                 "personality": self.personality_field.value or "A neutral expression.",
                 "race": self.race_dropdown.value or "Human",
                 "char_class": self.class_dropdown.value or "Commoner",
                 "environment": self.environment_dropdown.value or "a neutral setting",
-                "world_context": world_context,
-                "campaign_context": campaign_context
             }
 
             prompt = GENERATE_PORTRAIT_PROMPT.format(**prompt_params)

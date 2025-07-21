@@ -33,7 +33,6 @@ class SettingsView(ft.View):
             actions=[ft.IconButton(icon=ft.Icons.LOGOUT, on_click=self.logout_clicked, tooltip="Logout")]
         )
 
-
         # --- UI Controls ---
         # Appearance Card
         self.theme_mode_switch = ft.Switch(label="Dark Mode")
@@ -55,13 +54,30 @@ class SettingsView(ft.View):
 
         # Active Selections Card
         self.worlds_dropdown = ft.Dropdown(label="Active World", on_change=self.world_changed, expand=True)
+        # Campaigns dropdown will now show all campaigns for the selected world, regardless of language
         self.campaigns_dropdown = ft.Dropdown(label="Active Campaign", expand=True)
+        # New language dropdown to set the active language for content display
+        self.language_dropdown = ft.Dropdown(
+            label="Content Language",
+            options=[
+                ft.dropdown.Option("en", "English"),
+                ft.dropdown.Option("es", "Spanish"),
+                ft.dropdown.Option("de", "German"),
+                ft.dropdown.Option("fr", "French"),
+                ft.dropdown.Option("cs", "Czech"),
+                # Add more languages as needed
+            ],
+            expand=True,
+            on_change=self.language_changed  # Add on_change handler
+        )
+
         selections_card = ft.Card(
             content=ft.Container(
                 content=ft.Column([
                     ft.ListTile(leading=ft.Icon(ft.Icons.PUBLIC), title=ft.Text("Active Selections")),
                     self.worlds_dropdown,
                     self.campaigns_dropdown,
+                    self.language_dropdown,  # Add the new language dropdown
                 ]),
                 padding=16
             )
@@ -69,13 +85,13 @@ class SettingsView(ft.View):
 
         # AI Configuration Card
         self.model_dropdown = ft.Dropdown(
-            label="AI Model",
+            label="AI Model (Text)",  # Clarify label
             # DEBUG FIX: Use the TEXT_MODELS dictionary from config
             options=[ft.dropdown.Option(key, text) for key, text in TEXT_MODELS.items()],
             expand=True
         )
         self.model_dropdown_pic = ft.Dropdown(
-            label="AI Model",
+            label="AI Model (Image)",  # Clarify label
             # DEBUG FIX: Use the TEXT_MODELS dictionary from config
             options=[ft.dropdown.Option(key, text) for key, text in IMAGE_MODELS.items()],
             expand=True
@@ -132,6 +148,7 @@ class SettingsView(ft.View):
             "picture.model": (self.model_dropdown_pic, "value", DEFAULT_IMAGE_MODEL),
             "active_world_id": (self.worlds_dropdown, "value", None),
             "active_campaign_id": (self.campaigns_dropdown, "value", None),
+            "active_content_language": (self.language_dropdown, "value", "en"),  # New setting for content language
         }
 
         # Fetch all settings from client storage
@@ -146,13 +163,21 @@ class SettingsView(ft.View):
             if key == "app.theme_mode":
                 setattr(control, prop, value == "dark")
             elif value is not None:
-                setattr(control, prop, int(value) if 'id' in key else value)
+                # Convert ID values to int if they are not None, otherwise keep as is
+                if 'id' in key and value is not None:
+                    setattr(control, prop, int(value))
+                else:
+                    setattr(control, prop, value)
 
         # Load worlds dropdown
         try:
             worlds_response = await supabase.get_all_worlds()
             if worlds_response.data:
                 self.worlds_dropdown.options = [ft.dropdown.Option(w['id'], w['name']) for w in worlds_response.data]
+                # Ensure the selected world is still in the options
+                if self.worlds_dropdown.value not in [opt.key for opt in self.worlds_dropdown.options]:
+                    self.worlds_dropdown.value = None  # Clear if not valid
+
                 if self.worlds_dropdown.value:
                     await self.load_campaigns_for_world(int(self.worlds_dropdown.value))
         except Exception as e:
@@ -166,10 +191,11 @@ class SettingsView(ft.View):
             "app.theme_mode": "dark" if self.theme_mode_switch.value else "light",
             "app.theme_color": self.theme_color_dropdown.value,
             "ai.model": self.model_dropdown.value,
-            "picture_model": self.model_dropdown.value,
+            "picture_model": self.model_dropdown_pic.value,
             "prompt.rules_lawyer": self.rules_lawyer_prompt_field.value,
             "active_world_id": self.worlds_dropdown.value,
             "active_campaign_id": self.campaigns_dropdown.value,
+            "active_content_language": self.language_dropdown.value,  # Save the new language setting
         }
 
         tasks = [asyncio.to_thread(self.page.client_storage.set, key, value) for key, value in settings_to_save.items()
@@ -191,13 +217,30 @@ class SettingsView(ft.View):
         await self.load_campaigns_for_world(world_id)
         self.update()
 
+    async def language_changed(self, e):
+        """Handles active content language change."""
+        # When language changes, save the setting.
+        # The actual impact on displayed content will be handled by views
+        # that read from client_storage (e.g., CharactersView).
+        print(f"Language changed to: {self.language_dropdown.value}")
+        await asyncio.to_thread(self.page.client_storage.set, "active_content_language", self.language_dropdown.value)
+        self.update()  # Update the page to reflect any immediate changes or ensure state is saved.
+
     async def load_campaigns_for_world(self, world_id):
-        """Loads campaigns for the selected world into the dropdown."""
+        """
+        Loads campaigns for the selected world into the dropdown.
+        This now loads ALL campaigns for the world, regardless of language.
+        """
         try:
+            # The get_campaigns_for_world method in supabase_service already fetches all campaigns
+            # for a given world_id without a language filter.
             campaigns_response = await supabase.get_campaigns_for_world(world_id)
             if campaigns_response.data:
-                self.campaigns_dropdown.options = [ft.dropdown.Option(c['id'], c['name'].get('en', 'Unnamed')) for c in
-                                                   campaigns_response.data]
+                # Display campaign names using 'en' as a fallback if the selected language is not available
+                self.campaigns_dropdown.options = [
+                    ft.dropdown.Option(c['id'], c['name'].get(self.language_dropdown.value, 'Unnamed Campaign'))
+                    for c in campaigns_response.data
+                ]
                 # Keep existing selection if it's valid for the new world
                 active_campaign_id = await asyncio.to_thread(self.page.client_storage.get, "active_campaign_id")
                 if active_campaign_id and any(
@@ -218,3 +261,4 @@ class SettingsView(ft.View):
         await supabase.client.auth.sign_out()
         await asyncio.to_thread(self.page.client_storage.remove, "supabase.session")
         self.page.go("/login")
+
