@@ -269,10 +269,15 @@ class MainView(ft.View):
 
             if selected_tab == 0:  # Lore Master
                 if self.lore_chat_session:
-                    response = await asyncio.to_thread(self.lore_chat_session.send_message, user_text)
-                    response_text = response.text
+                    response_text, updated_history = await self.gemini_service.send_chat_message(
+                        model_name=model_name,
+                        message=user_text,
+                        history=self.lore_chat_session  # self.lore_chat_session is now our history list
+                    )
+                    # Update the session with the new, complete history
+                    self.lore_chat_session = updated_history
                 else:
-                    response_text = "Error: Lore Master session not initialized. Select a world and campaign in Settings."
+                    response_text = "Error: Lore Master session not initialized."
             else:  # Rules Lawyer
                 if self.gemini_srd_file:
                     srd_prompt = await asyncio.to_thread(self.page.client_storage.get,

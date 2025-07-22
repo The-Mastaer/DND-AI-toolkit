@@ -1,0 +1,3 @@
+# supabase/config.toml
+[functions.gemini-master-proxy]
+  import_map = "./functions/import_map.json"

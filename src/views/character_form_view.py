@@ -381,7 +381,7 @@ class CharacterFormView(ft.View):
             user = await supabase.get_user()
             if not user:
                 self.page.open(
-                    ft.SnackBar(ft.Text("Error: User session not found. Please log in again."), bgcolor=ft.colors.RED))
+                    ft.SnackBar(ft.Text("Error: User session not found. Please log in again."), bgcolor=ft.Colors.RED))
                 raise Exception("User not authenticated.")
             bucket_name = "assets"
             # Assuming you have the user's ID, required for the path
@@ -428,19 +428,13 @@ class CharacterFormView(ft.View):
         self.update()
 
         try:
-            srd_file = await self.gemini_service.get_gemini_file_by_name(GEMINI_SRD_FILE_NAME)
-            if not srd_file:
-                self.page.open(
-                    ft.SnackBar(ft.Text("SRD file not found. Check settings and ensure it has been uploaded."),
-                                bgcolor=ft.Colors.RED))
-                return
 
             model_name = await asyncio.to_thread(self.page.client_storage.get, "ai.model") or DEFAULT_TEXT_MODEL
 
             stats_pydantic_obj = await self.gemini_service.generate_character_attributes(
                 character_class=npc_class,
                 rarity=rarity,
-                srd_file=srd_file,
+                srd_file_uri=GEMINI_SRD_FILE_NAME,
                 model_name=model_name
             )
 

@@ -11,9 +11,6 @@ load_dotenv()
 SUPABASE_URL: Optional[str] = os.getenv("SUPABASE_URL")
 SUPABASE_KEY: Optional[str] = os.getenv("SUPABASE_KEY")
 
-# Gemini API configuration
-GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
-
 # Permanent ID for the master SRD document on Gemini's File API
 GEMINI_SRD_FILE_NAME = os.getenv("GEMINI_SRD_FILE_NAME")
 
@@ -52,8 +49,8 @@ IMAGE_MODELS = {
 
 # --- Default Model Definitions ---
 # These constants define which models are selected by default in the settings.
-DEFAULT_TEXT_MODEL = "gemini-2.5-flash"
-DEFAULT_IMAGE_MODEL = "imagen-3.0-generate-002"
+DEFAULT_TEXT_MODEL = "Gemini 2.5 Flash"
+DEFAULT_IMAGE_MODEL = "Imagen 3.0 Generate"
 
 # --- D&D Specific Constants ---
 DND_RACES = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"]

@@ -13,12 +13,12 @@ def upload_srd_file():
     """
     load_dotenv()
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = "AIzaSyChOjMQU6pycdY_2Bbg3K9WZFYlKefUmrQ"
     if not api_key:
         print("Error: GEMINI_API_KEY not found in .env file or environment.")
         return
 
-    srd_path = pathlib.Path("srd.pdf")
+    srd_path = pathlib.Path("assets/srd.pdf")
     if not srd_path.exists():
         print(f"Error: The file '{srd_path}' was not found in the project directory.")
         print("Please place your SRD PDF in the project root and name it 'srd.pdf'.")

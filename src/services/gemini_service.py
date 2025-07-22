@@ -1,12 +1,14 @@
 # src/services/gemini_service.py
 
-from google import genai
-from google.genai import types
-from config import GEMINI_API_KEY
-from prompts import GENERATE_ATTRIBUTES_PROMPT, GENERATE_NPC_PROMPT
+import httpx
 import json
+import base64
+from typing import List, Dict, Optional, Any
+
+from src.config import SUPABASE_URL, SUPABASE_KEY
+from src.prompts import GENERATE_ATTRIBUTES_PROMPT, GENERATE_NPC_PROMPT
+
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Dict
 import random
 
 
@@ -67,54 +69,84 @@ class GeminiService:
     """
 
     def __init__(self):
-        if not GEMINI_API_KEY:
-            raise ValueError("GEMINI_API_KEY is not set in the environment variables.")
-        print("--- Initializing Gemini Service ---")
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise ValueError("Supabase URL and Key must be set.")
+        print("--- Initializing Gemini Service (Pragmatic Proxy Mode) ---")
+        self.client = httpx.AsyncClient(timeout=60.0)
+        self.proxy_url = f"{SUPABASE_URL}/functions/v1/quick-api"
+        self.headers = {
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json"
+        }
 
-    def start_chat_session(self, initial_context: str, model_name: str):
+        self.client = httpx.AsyncClient(timeout=90.0)
+
+    async def _invoke_proxy(self, payload: dict) -> dict:
+        """Private helper to call our master proxy."""
+        try:
+            response = await self.client.post(self.proxy_url, headers=self.headers, json=payload)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            print(f"--- PROXY ERROR: {e.response.status_code} - {e.response.text} ---")
+            raise
+
+    def _clean_json_from_text(self, text: str) -> Dict[str, Any]:
+        """Utility to safely extract and parse JSON from the model's markdown-formatted text response."""
+        if "```json" in text:
+            # More robustly find the start and end of the JSON block
+            try:
+                json_part = text.split("```json")[1]
+                json_part = json_part.split("```")[0]
+                return json.loads(json_part.strip())
+            except (IndexError, json.JSONDecodeError):
+                print("--- WARNING: Could not parse JSON from model response. ---")
+                raise ValueError("Invalid JSON format in model response")
+        else:
+            # If no markdown, assume the whole text is JSON
+            return json.loads(text.strip())
+
+    def start_chat_session(self, initial_context: str, model_name: str) -> List[Dict[str, Any]]:
         """
-        Starts a new conversational chat session.
-        This is corrected to use the proper client.chats.create method.
+        Pragmatic replacement for chat. Instead of a stateful server object,
+        it returns the initial history list. The client is responsible for storing it.
         """
-        print(f"--- Starting new Gemini Chat Session with model: {model_name} ---")
-        # **FIX:** Reverted to the correct method for creating a chat session with history.
-        chat_session = self.client.chats.create(
-            model=model_name,
-            history=[
-                {'role': 'user', 'parts': [{'text': initial_context}]},
-                {'role': 'model',
-                 'parts': [{'text': "Understood. I am ready to answer questions based on the provided context."}]}
+        print(f"--- Creating initial history for chat session ---")
+        # This is the initial state that the Flet app will hold and manage
+        return [
+            {'role': 'user', 'parts': [{'text': initial_context}]},
+            {'role': 'model', 'parts': [{'text': "Understood. I am ready to answer questions based on the provided context."}]}
+        ]
+
+    async def send_chat_message(self, model_name: str, message: str, history: List[Dict[str, Any]]) -> (str, List[Dict[str, Any]]):
+        """
+        Sends a message as part of a stateless chat. The client provides the full
+        history and gets the updated history back.
+        """
+        payload = {
+            "model": model_name,
+            "prompt": message,
+            "history": history
+        }
+        try:
+            proxy_response = await self._invoke_proxy(payload)
+            response_text = proxy_response['candidates'][0]['content']['parts'][0]['text']
+
+            # Return the new text and the updated history list for the client to store
+            updated_history = history + [
+                {'role': 'user', 'parts': [{'text': message}]},
+                {'role': 'model', 'parts': [{'text': response_text}]}
             ]
-        )
-        return chat_session
-
-    async def get_text_response(self, prompt: str, model_name: str) -> str:
-        """Gets a simple text response from the model for non-chat tasks."""
-        print(f"--- Getting simple text response from Gemini using model {model_name} ---")
-        try:
-            response = await self.client.aio.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
-            return response.text
+            return response_text, updated_history
         except Exception as e:
-            print(f"--- ERROR during text generation: {e} ---")
-            return f"An error occurred: {e}"
+            print(f"--- ERROR in send_chat_message: {e} ---")
+            # Return error message and the original, unmodified history
+            return f"An error occurred: {e}", history
 
-    async def get_gemini_file_by_name(self, file_name: str) -> types.File | None:
-        """Retrieves a Gemini File object by its name (URI)."""
-        try:
-            file_info = self.client.files.get(name=file_name)
-            if file_info.state.name == 'ACTIVE':
-                print(f"--- Successfully retrieved Gemini file: {file_info.name} ---")
-                return file_info
-            else:
-                print(f"--- Gemini file {file_info.name} is not active. State: {file_info.state.name} ---")
-                return None
-        except Exception as e:
-            print(f"--- ERROR retrieving Gemini file {file_name}: {e} ---")
-            return None
+    async def get_gemini_file_by_name(self, file_name: str):
+        """DEPRECATED: File management is now handled by the backend."""
+        print("--- WARNING: get_gemini_file_by_name is deprecated. ---")
+        raise NotImplementedError("File management must be handled server-side and cannot be done via this proxy service.")
 
     async def generate_npc_data(self, model_name: str, **prompt_params) -> NPCData | None:
         """
@@ -161,31 +193,48 @@ class GeminiService:
             # We explicitly require all fields to be present.
             "required": ["name", "appearance", "personality", "backstory", "plot_hooks", "roleplaying_tips"]
         }
-
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "response_schema": manual_npc_schema
+        }
         try:
-            response = await self.client.aio.models.generate_content(
-                model=model_name,
-                contents=prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    # Use our manually defined dictionary instead of the Pydantic class
-                    "response_schema": manual_npc_schema,
-                }
-            )
+            print("--- Calling proxy for structured NPC data... ---")
+            proxy_response = await self._invoke_proxy(payload)
 
-            # We can't use response.parsed here since we didn't give it a class,
-            # so we'll construct the NPCData object from the returned json.
-            if response.text:
-                import json
-                data = json.loads(response.text)
-                return NPCData(**data)
+            # --- NEW: Robust Response Validation ---
+            if not proxy_response.get('candidates'):
+                # Check for a safety block reason in the prompt feedback
+                feedback = proxy_response.get('promptFeedback', {})
+                block_reason = feedback.get('blockReason', 'Unknown')
+                raise ValueError(f"API call failed or was blocked. Reason: {block_reason}. Response: {proxy_response}")
+
+            # Ensure the expected structure exists before accessing it
+            candidate = proxy_response['candidates'][0]
+            if 'content' not in candidate or 'parts' not in candidate['content'] or not candidate['content']['parts']:
+                finish_reason = candidate.get('finishReason', 'Unknown')
+                raise ValueError(
+                    f"Response from API is incomplete. Finish Reason: {finish_reason}. Check for safety blocks.")
+
+            response_text = candidate['content']['parts'][0].get('text', '')
+            if not response_text:
+                raise ValueError("API returned an empty text response. This is often due to safety filters.")
+            # --- End of New Validation ---
+
+            data = self._clean_json_from_text(response_text)
+            return NPCData(**data)
+
+        except ValueError as ve:
+            # Catch our specific validation errors and print them clearly
+            print(f"--- VALIDATION ERROR in generate_npc_data: {ve} ---")
             return None
-
         except Exception as e:
-            print(f"--- ERROR generating NPC data with MANUAL schema: {e} ---")
+            # Catch other unexpected errors
+            print(f"--- UNEXPECTED ERROR in generate_npc_data: {e} ---")
             return None
 
-    async def generate_character_attributes(self, character_class: str, rarity: str, srd_file: types.File,
+
+    async def generate_character_attributes(self, character_class: str, rarity: str, srd_file_uri: str,
                                             model_name: str) -> CharacterStats | None:
         """
         Generates structured character stats using a MANUAL schema.
@@ -274,65 +323,43 @@ class GeminiService:
             "required": ["level", "hp", "ac", "attributes", "saving_throws", "skills", "abilities", "spells"]
         }
 
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "file_uri": srd_file_uri,
+            "response_schema": manual_character_stats_schema
+        }
+
         try:
-            contents = [srd_file, prompt]
-            response = await self.client.aio.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": manual_character_stats_schema
-                }
-            )
-            # Manually parse the JSON and construct the Pydantic model
-            if response.text:
-                data = json.loads(response.text)
+            print(f"--- Calling proxy for stats for {rarity} {character_class}... ---")
+            proxy_response = await self._invoke_proxy(payload)
+            response_text = proxy_response['candidates'][0]['content']['parts'][0]['text']
+            data = self._clean_json_from_text(response_text)
 
-                # Before creating the final object, we must convert the list-of-objects
-                # for skills and saving_throws back into the dictionaries your Pydantic model expects.
-                data['saving_throws'] = {item['name']: item['modifier'] for item in data.get('saving_throws', [])}
-                data['skills'] = {item['name']: item['modifier'] for item in data.get('skills', [])}
-
-                return CharacterStats(**data)
-            return None
+            # Convert the list-of-objects from the schema back to the dicts your Pydantic model expects
+            data['saving_throws'] = {item['name']: item['modifier'] for item in data.get('saving_throws', [])}
+            data['skills'] = {item['name']: item['modifier'] for item in data.get('skills', [])}
+            return CharacterStats(**data)
         except Exception as e:
             print(f"--- ERROR generating character stats: {e} ---")
             return None
 
-    async def query_srd_file(self, question: str, srd_file: types.File, system_prompt: str, model_name: str):
-        """Queries the SRD file with a question and a system prompt."""
-        print(f"--- Querying Gemini with file {srd_file.name} using model {model_name} ---")
-        try:
-            # **FIX:** This is the correct pattern for using a system instruction.
-            response = await self.client.aio.models.generate_content(
-                model=model_name,
-                contents=[srd_file, question],
-                # The file object and text prompt are correctly combined [cite: 384, 401]
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt)
-            )
-            return response.text
-        except Exception as e:
-            print(f"--- ERROR during SRD query: {e} ---")
-            return f"An error occurred while querying the SRD. Details: {e}"
 
-    async def generate_image(self, prompt: str, model_name: str) -> bytes | None:
-        """Generates an image using the specified model and prompt."""
-        print(f"--- Generating portrait with Gemini using model: {model_name} ---")
+    async def generate_image(self, prompt: str, model_name: str) -> Optional[bytes]:
+        """Generates an image by calling the secure proxy."""
+        print(f"--- Calling proxy for image generation... ---")
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "image_response": True # Signal to our proxy that we want an image
+        }
         try:
-            response = await self.client.aio.models.generate_images(
-                model=model_name,
-                prompt=prompt,
-                config=types.GenerateImagesConfig(number_of_images=1)
-            )
-            if response.generated_images:
-                print("--- Image generated successfully. ---")
-                return response.generated_images[0].image.image_bytes
-            else:
-                print("--- Gemini returned no images. ---")
-                return None
+            # We need a separate call for image bytes, assuming the proxy returns raw bytes
+            response = await self.client.post(self.proxy_url, headers=self.headers, json=payload, timeout=120.0)
+            response.raise_for_status()
+            return response.content
         except Exception as e:
-            print(f"--- ERROR during image generation: {e} ---")
+            print(f"--- ERROR in generate_image: {e} ---")
             return None
 
 
