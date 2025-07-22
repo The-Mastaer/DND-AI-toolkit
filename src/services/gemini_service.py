@@ -176,10 +176,13 @@ class GeminiService:
         print(f"--- Querying Gemini with file {srd_file.name} using model {model_name} ---")
         try:
             # **FIX:** This is the correct pattern for using a system instruction.
-            model = self.client.models.get(model_name)
-            model.system_instruction = system_prompt
-            contents = [srd_file, question]
-            response = await model.aio.generate_content(contents=contents)
+            response = await self.client.aio.models.generate_content(
+                model=model_name,
+                contents=[srd_file, question],
+                # The file object and text prompt are correctly combined [cite: 384, 401]
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt)
+            )
             return response.text
         except Exception as e:
             print(f"--- ERROR during SRD query: {e} ---")
