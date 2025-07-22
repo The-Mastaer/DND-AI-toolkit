@@ -73,7 +73,7 @@ class GeminiService:
             raise ValueError("Supabase URL and Key must be set.")
         print("--- Initializing Gemini Service (Pragmatic Proxy Mode) ---")
         self.client = httpx.AsyncClient(timeout=60.0)
-        self.proxy_url = f"{SUPABASE_URL}/functions/v1/quick-api"
+        self.proxy_url = f"{SUPABASE_URL}/functions/v1/gemini-master-proxy"
         self.headers = {
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type": "application/json"

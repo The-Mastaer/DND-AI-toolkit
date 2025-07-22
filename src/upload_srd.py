@@ -13,7 +13,7 @@ def upload_srd_file():
     """
     load_dotenv()
 
-    api_key = "AIzaSyChOjMQU6pycdY_2Bbg3K9WZFYlKefUmrQ"
+    api_key = "AIzaSyDc60XV-OjPtDy9G9YQ9CJj2Cu-L5IcQXc"
     if not api_key:
         print("Error: GEMINI_API_KEY not found in .env file or environment.")
         return
