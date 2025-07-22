@@ -61,6 +61,7 @@ The generated text for all fields MUST be in {target_language}.
 **NPC Parameters:**
 - Race: {race}
 - Class: {char_class}
+- Gender: {gender}
 - Environment: {environment}
 - Hostility: {hostility}
 - Rarity: {rarity}
@@ -73,9 +74,10 @@ GENERATE_PORTRAIT_PROMPT = """
 
 **Character Description:**
 - **Appearance:** {appearance}
-- **Personality:** {personality}
+- **Personality (for mood/expression):** {personality}
 - **Race:** {race}
 - **Class:** {char_class}
+- **Rarity/Power Level:** {rarity} (Level {level})
 - **Environment:** {environment}
 
 **Artistic Style:**
@@ -86,7 +88,7 @@ GENERATE_PORTRAIT_PROMPT = """
 - **Color Palette:** Rich, evocative colors that match the character's personality and class.
 
 **Contextual Information (Use this to influence the character's gear, clothing style, and subtle details):**
-- **Environment:** The character is typically found in a {environment} environment.
+- **Environment:** The character is typically found in a {environment} environment. Their gear should reflect their power level ({rarity}).
 
 **Instructions:**
 - **Do not include any text, watermarks, or signatures in the image.**
