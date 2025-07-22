@@ -31,7 +31,7 @@ class MainView(ft.View):
 
         # --- State Management ---
         self.lore_chat_session = None
-        self.gemini_srd_file = None  # Stores the actual Gemini File object
+        self.gemini_srd_file_uri: str | None = None
 
         # --- Navigation Rail ---
         self.navigation_rail = ft.NavigationRail(
@@ -160,7 +160,7 @@ class MainView(ft.View):
         else:
             self.user_input.hint_text = "Ask the Rules Lawyer..."
             self.active_chat_history = self.rules_chat_history
-            if not self.gemini_srd_file:
+            if not self.gemini_srd_file_uri:
                 self.page.run_task(self.initialize_rules_lawyer)
         self.update()
 
@@ -230,22 +230,12 @@ class MainView(ft.View):
             self.update()
             return
 
-        try:
-            print(f"--- Fetching SRD file from Gemini API using permanent name: {GEMINI_SRD_FILE_NAME} ---")
-            self.gemini_srd_file = await self.gemini_service.get_gemini_file_by_name(GEMINI_SRD_FILE_NAME)
-
-            if self.gemini_srd_file:
-                self.rules_chat_history.controls.clear()
-                self.rules_chat_history.controls.append(
-                    ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN))
-            else:
-                raise Exception("Could not retrieve SRD file from Gemini. Check permissions or file name in config.")
-
-        except Exception as e:
-            self.rules_chat_history.controls.clear()
-            self.rules_chat_history.controls.append(
-                ft.Text(f"Error initializing Rules Lawyer: {e}", color=ft.Colors.RED))
-
+        # Simply store the file name. The proxy will use this to reference the file.
+        print(f"--- Rules Lawyer initialized with SRD file URI: {GEMINI_SRD_FILE_NAME} ---")
+        self.gemini_srd_file_uri = GEMINI_SRD_FILE_NAME
+        self.rules_chat_history.controls.clear()
+        self.rules_chat_history.controls.append(
+            ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN))
         self.update()
 
     async def send_message_click(self, e):
@@ -279,13 +269,14 @@ class MainView(ft.View):
                 else:
                     response_text = "Error: Lore Master session not initialized."
             else:  # Rules Lawyer
-                if self.gemini_srd_file:
+                if self.gemini_srd_file_uri:  # Check for the URI string
                     srd_prompt = await asyncio.to_thread(self.page.client_storage.get,
                                                          "prompt.rules_lawyer") or SRD_QUERY_PROMPT
-                    # The service needs the actual file object, not just the name
+
+                    # Pass the URI string to the service
                     response_text = await self.gemini_service.query_srd_file(
                         question=user_text,
-                        srd_file=self.gemini_srd_file,
+                        srd_file_uri=self.gemini_srd_file_uri,  # Pass the URI string
                         system_prompt=srd_prompt,
                         model_name=model_name
                     )

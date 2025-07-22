@@ -49,8 +49,8 @@ IMAGE_MODELS = {
 
 # --- Default Model Definitions ---
 # These constants define which models are selected by default in the settings.
-DEFAULT_TEXT_MODEL = "Gemini 2.5 Flash"
-DEFAULT_IMAGE_MODEL = "Imagen 3.0 Generate"
+DEFAULT_TEXT_MODEL = "gemini-2.5-flash"
+DEFAULT_IMAGE_MODEL = "imagen-3.0-generate-002"
 
 # --- D&D Specific Constants ---
 DND_RACES = ["Human", "Elf", "Dwarf", "Halfling", "Dragonborn", "Gnome", "Half-Elf", "Half-Orc", "Tiefling"]

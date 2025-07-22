@@ -143,10 +143,30 @@ class GeminiService:
             # Return error message and the original, unmodified history
             return f"An error occurred: {e}", history
 
-    async def get_gemini_file_by_name(self, file_name: str):
-        """DEPRECATED: File management is now handled by the backend."""
-        print("--- WARNING: get_gemini_file_by_name is deprecated. ---")
-        raise NotImplementedError("File management must be handled server-side and cannot be done via this proxy service.")
+    async def query_srd_file(self, question: str, srd_file_uri: str, system_prompt: str, model_name: str) -> str:
+        """
+        Queries an existing file on Gemini via the proxy using its URI.
+        """
+        print(f"--- Querying SRD file '{srd_file_uri}' via proxy... ---")
+        payload = {
+            "model": model_name,
+            "prompt": question,
+            "system_prompt": system_prompt,
+            "file_uri": srd_file_uri,
+            "file_mime_type": "application/pdf"  # Assuming PDF, can be made dynamic if needed
+        }
+        try:
+            proxy_response = await self._invoke_proxy(payload)
+
+            if not proxy_response.get('candidates'):
+                feedback = proxy_response.get('promptFeedback', {})
+                block_reason = feedback.get('blockReason', 'Unknown')
+                raise ValueError(f"API call failed or was blocked. Reason: {block_reason}.")
+
+            return proxy_response['candidates'][0]['content']['parts'][0]['text']
+        except Exception as e:
+            print(f"--- ERROR in query_srd_file: {e} ---")
+            return f"An error occurred while querying the rules document: {e}"
 
     async def generate_npc_data(self, model_name: str, **prompt_params) -> NPCData | None:
         """
