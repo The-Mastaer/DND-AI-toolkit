@@ -213,6 +213,59 @@ class SupabaseService:
         response = await self.client.storage.from_(bucket_name).download(path=file_path)
         return response
 
+    async def execute_advanced_search(self, table_name: str, filters: dict):
+        """
+        Performs a search on a specified table with multiple filters.
+        This is now primarily for spells, as items use a dedicated RPC.
+        """
+        if not self.client:
+            raise Exception("Supabase client not initialized.")
+
+        query = self.client.from_(table_name).select('*')
+
+        print(f"--- [SERVICE] Building query for table '{table_name}' with filters: {filters} ---")
+
+        for column, value in filters.items():
+            if value is None or value == "":
+                continue
+            if column.endswith("__ilike"):
+                actual_column = column.replace("__ilike", "")
+                query = query.ilike(actual_column, f'%{value}%')
+            else:
+                query = query.eq(column, value)
+
+        response = await query.execute()
+        return response
+
+    async def search_items_rpc(self, filters: dict):
+        """
+        Calls the 'search_items_advanced' database function with the provided filters.
+        """
+        if not self.client:
+            raise Exception("Supabase client not initialized.")
+
+        print(f"--- [SERVICE] Calling RPC 'search_items_advanced' with filters: {filters} ---")
+
+        # Ensure all possible keys are present, defaulting to None if not provided by the UI
+        rpc_params = {
+            'name_query': filters.get('item_name__ilike'),
+            'category_query': filters.get('category'),
+            'rarity_query': filters.get('rarity'),
+            'attunement_query': filters.get('requires_attunement'),
+            'properties_query': filters.get('properties__ilike'),
+            'min_cost_gp': filters.get('min_cost_gp'),  # Add new cost filter
+            'max_cost_gp': filters.get('max_cost_gp')  # Add new cost filter
+        }
+
+        response = await self.client.rpc('search_items_advanced', rpc_params).execute()
+
+        print(f"--- [SERVICE] RPC response: ---")
+        if hasattr(response, 'error') and response.error:
+            print(f"Error: {response.error}")
+        else:
+            print(f"Data received: {len(response.data)} rows")
+        print("--- [SERVICE] End of RPC response ---")
+        return response
 
 # Create a single instance of the service to be used throughout the app
 supabase = SupabaseService()

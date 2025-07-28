@@ -10,3 +10,5 @@ __pycache__/
 
 # Flet build artifacts
 /build/
+
+upload_srd.py

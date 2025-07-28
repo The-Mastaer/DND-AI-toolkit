@@ -13,6 +13,7 @@ from views.characters_view import CharactersView
 from views.character_form_view import CharacterFormView
 from services.supabase_service import supabase
 from services.gemini_service import gemini_service
+from views.database_view import DatabaseView
 
 
 async def main(page: ft.Page):
@@ -23,8 +24,9 @@ async def main(page: ft.Page):
     await supabase.initialize()
 
     page.title = "D&D AI Toolkit"
-    page.window_width = 1200
-    page.window_height = 800
+    # page.window_width = 1200
+    # page.window_height = 800
+    page.window.maximized = True
 
     theme_mode = await asyncio.to_thread(page.client_storage.get, "app.theme_mode") or "dark"
     theme_color = await asyncio.to_thread(page.client_storage.get, "app.theme_color") or "blue"
@@ -38,6 +40,7 @@ async def main(page: ft.Page):
         "/settings": lambda p: SettingsView(p, gemini_service),
         "/campaigns": lambda p: CampaignsView(p, gemini_service),
         "/characters": lambda p: CharactersView(p, gemini_service),
+        "/database": lambda p: DatabaseView(p, supabase),
         "/character_edit": lambda p, **params: CharacterFormView(p, gemini_service, **params),
     }
 
@@ -61,7 +64,7 @@ async def main(page: ft.Page):
                 refresh_token = session_info.get("refresh_token")
 
                 if access_token and refresh_token:
-                    # **THE FIX:** Pass the tokens as two separate arguments, as the function expects.
+
                     await supabase.set_session(access_token, refresh_token)
                     print("--- Session successfully set from client storage. ---")
                 else:
