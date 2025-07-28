@@ -5,8 +5,8 @@ import json
 import base64
 from typing import List, Dict, Optional, Any
 
-from src.config import SUPABASE_URL, SUPABASE_KEY
-from src.prompts import GENERATE_ATTRIBUTES_PROMPT, GENERATE_NPC_PROMPT
+from config import SUPABASE_URL, SUPABASE_KEY
+from prompts import GENERATE_ATTRIBUTES_PROMPT, GENERATE_NPC_PROMPT
 
 from pydantic import BaseModel, Field, ConfigDict
 import random
@@ -153,7 +153,6 @@ class GeminiService:
             "prompt": question,
             "system_prompt": system_prompt,
             "file_uri": srd_file_uri,
-            "file_mime_type": "application/pdf"  # Assuming PDF, can be made dynamic if needed
         }
         try:
             proxy_response = await self._invoke_proxy(payload)

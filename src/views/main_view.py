@@ -33,6 +33,9 @@ class MainView(ft.View):
         self.lore_chat_session = None
         self.gemini_srd_file_uri: str | None = None
 
+        # --- Control Management ---
+        self.chat_controls = {}
+
         # --- Navigation Rail ---
         self.navigation_rail = ft.NavigationRail(
             selected_index=0,
@@ -65,27 +68,6 @@ class MainView(ft.View):
             on_change=self.nav_change,
         )
 
-        # --- Chat UI Controls ---
-        self.lore_chat_history = ft.ListView(expand=True, spacing=10, auto_scroll=True)
-        self.rules_chat_history = ft.ListView(expand=True, spacing=10, auto_scroll=True)
-        self.active_chat_history = self.lore_chat_history
-
-        self.user_input = ft.TextField(
-            hint_text="Ask the Lore Master...",
-            expand=True,
-            on_submit=self.send_message_click,
-            shift_enter=True,
-            min_lines=1,
-            max_lines=5,
-            filled=True,
-        )
-        self.send_button = ft.IconButton(
-            icon=ft.Icons.SEND_ROUNDED,
-            tooltip="Send Message",
-            on_click=self.send_message_click,
-        )
-        self.chat_progress = ft.ProgressRing(width=24, height=24, stroke_width=3, visible=False)
-
         # --- Main Content Area with Tabs ---
         self.main_content = ft.Tabs(
             selected_index=0,
@@ -95,12 +77,12 @@ class MainView(ft.View):
                 ft.Tab(
                     text="Lore Master",
                     icon=ft.Icons.MENU_BOOK_ROUNDED,
-                    content=self.build_chat_view(self.lore_chat_history),
+                    content=self.build_chat_view(key="lore", hint_text="Ask the Lore Master..."),
                 ),
                 ft.Tab(
                     text="Rules Lawyer",
                     icon=ft.Icons.GAVEL_ROUNDED,
-                    content=self.build_chat_view(self.rules_chat_history),
+                    content=self.build_chat_view(key="rules", hint_text="Ask the Rules Lawyer..."),
                 ),
             ],
             expand=True,
@@ -118,14 +100,40 @@ class MainView(ft.View):
             )
         ]
 
-    def build_chat_view(self, chat_list_view: ft.ListView):
-        """Builds the reusable chat interface container."""
+    def build_chat_view(self, key: str, hint_text: str):
+        """Builds a UNIQUE and self-contained chat interface for a tab."""
+        # Create NEW instances of all controls for this tab.
+        chat_history = ft.ListView(expand=True, spacing=10, auto_scroll=True)
+        user_input = ft.TextField(
+            hint_text=hint_text,
+            expand=True,
+            on_submit=self.send_message_click,
+            shift_enter=True,
+            min_lines=1,
+            max_lines=5,
+            filled=True,
+        )
+        send_button = ft.IconButton(
+            icon=ft.Icons.SEND_ROUNDED,
+            tooltip="Send Message",
+            on_click=self.send_message_click,
+        )
+        chat_progress = ft.ProgressRing(width=24, height=24, stroke_width=3, visible=False)
+
+        # Store these new, unique controls in our dictionary.
+        self.chat_controls[key] = {
+            "input": user_input,
+            "button": send_button,
+            "progress": chat_progress,
+            "history": chat_history,
+        }
+
         return ft.Container(
             content=ft.Column(
                 [
-                    ft.Row([self.chat_progress]),
-                    chat_list_view,
-                    ft.Row(controls=[self.user_input, self.send_button]),
+                    ft.Row([chat_progress]),
+                    chat_history,
+                    ft.Row(controls=[user_input, send_button]),
                 ],
                 expand=True,
             ),
@@ -154,20 +162,19 @@ class MainView(ft.View):
         """Handles switching between Lore Master and Rules Lawyer tabs."""
         selected_index = e.control.selected_index
         if selected_index == 0:  # Lore Master
-            self.user_input.hint_text = "Ask the Lore Master..."
-            self.active_chat_history = self.lore_chat_history
             self.page.run_task(self.initialize_lore_master)
-        else:
-            self.user_input.hint_text = "Ask the Rules Lawyer..."
-            self.active_chat_history = self.rules_chat_history
+        else:  # Rules Lawyer
             if not self.gemini_srd_file_uri:
                 self.page.run_task(self.initialize_rules_lawyer)
+        # The update call can remain, it doesn't hurt.
         self.update()
 
     async def initialize_lore_master(self):
         """Sets up the Lore Master chat, loading context from the database."""
-        self.lore_chat_history.controls.clear()
-        self.lore_chat_history.controls.append(ft.Text("Loading campaign context...", italic=True))
+        lore_controls = self.chat_controls["lore"]
+        lore_history = lore_controls["history"]
+        lore_history.controls.clear()
+        lore_history.controls.append(ft.Text("Loading campaign context...", italic=True))
         self.update()
 
         keys_to_fetch = ["active_language_code", "active_world_id", "active_campaign_id", "ai.model"]
@@ -181,12 +188,14 @@ class MainView(ft.View):
         model_name = settings.get("ai.model") or DEFAULT_TEXT_MODEL
 
         if not world_id or not campaign_id:
-            self.lore_chat_history.controls.clear()
-            self.lore_chat_history.controls.append(
+            lore_history.controls.clear()
+            lore_history.controls.append(
                 ft.Text("No active world or campaign selected in Settings.", color=ft.Colors.RED))
             self.update()
             return
 
+        # The rest of your logic remains the same, just make sure it
+        # appends to 'lore_history' instead of 'self.lore_chat_history'.
         try:
             world_response = await supabase.get_world_details(int(world_id))
             world_data = world_response.data if world_response else None
@@ -208,88 +217,94 @@ class MainView(ft.View):
                 initial_context=context,
                 model_name=model_name
             )
-            self.lore_chat_history.controls.clear()
-            self.lore_chat_history.controls.append(
+            lore_history.controls.clear()
+            lore_history.controls.append(
                 ft.Text("Context loaded. Ask about your campaign!", color=ft.Colors.GREEN_700))
         except Exception as e:
-            self.lore_chat_history.controls.clear()
-            self.lore_chat_history.controls.append(ft.Text(f"Error loading context: {e}", color=ft.Colors.RED))
+            lore_history.controls.clear()
+            lore_history.controls.append(ft.Text(f"Error loading context: {e}", color=ft.Colors.RED))
         self.update()
 
     async def initialize_rules_lawyer(self):
         """
         Loads the permanent SRD file from Gemini using the ID from the application config.
         """
-        self.rules_chat_history.controls.clear()
-        self.rules_chat_history.controls.append(ft.Text("Initializing Rules Lawyer...", italic=True))
+        rules_controls = self.chat_controls["rules"]
+        rules_history = rules_controls["history"]
+        rules_history.controls.clear()
+        rules_history.controls.append(ft.Text("Initializing Rules Lawyer...", italic=True))
         self.update()
 
         if not GEMINI_SRD_FILE_NAME:
-            self.rules_chat_history.controls.clear()
-            self.rules_chat_history.controls.append(ft.Text("SRD document is not configured.", color=ft.Colors.RED))
+            rules_history.controls.clear()
+            rules_history.controls.append(ft.Text("SRD document is not configured.", color=ft.Colors.RED))
             self.update()
             return
 
-        # Simply store the file name. The proxy will use this to reference the file.
-        print(f"--- Rules Lawyer initialized with SRD file URI: {GEMINI_SRD_FILE_NAME} ---")
         self.gemini_srd_file_uri = GEMINI_SRD_FILE_NAME
-        self.rules_chat_history.controls.clear()
-        self.rules_chat_history.controls.append(
-            ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN))
+        rules_history.controls.clear()
+        rules_history.controls.append(ft.Text("SRD document ready. Ask a rules question.", color=ft.Colors.GREEN))
         self.update()
 
-    async def send_message_click(self, e):
-        """Handles the sending of a message from the user input field."""
-        user_text = self.user_input.value
+    def send_message_click(self, e):
+        """Handles sending a message and kicks off the background task."""
+        # 1. Identify which set of controls is active.
+        selected_index = self.main_content.selected_index
+        active_key = "lore" if selected_index == 0 else "rules"
+        controls = self.chat_controls[active_key]
+
+        user_input = controls["input"]
+        user_text = user_input.value
         if not user_text: return
 
-        self.user_input.value = ""
-        self.send_button.disabled = True
-        self.chat_progress.visible = True
-        self.update()
-
-        self.active_chat_history.controls.append(
+        # 2. Provide INSTANT UI feedback using the correct controls.
+        user_input.value = ""
+        controls["button"].disabled = True
+        controls["progress"].visible = True
+        controls["history"].controls.append(
             ft.Row([ft.Icon(ft.Icons.PERSON), ft.Text(user_text, selectable=True, expand=True)])
         )
         self.update()
 
+        # 3. Run the long-running API call in the background.
+        self.page.run_task(self.get_gemini_response, user_text, active_key)
+
+    async def get_gemini_response(self, user_text: str, active_key: str):
+        """Background task that calls the API and updates the correct UI when done."""
+        controls = self.chat_controls[active_key]
+        active_chat_history = controls["history"]
+
         try:
             model_name = await asyncio.to_thread(self.page.client_storage.get, "ai.model") or DEFAULT_TEXT_MODEL
-            selected_tab = self.main_content.selected_index
 
-            if selected_tab == 0:  # Lore Master
+            if active_key == "lore":
                 if self.lore_chat_session:
                     response_text, updated_history = await self.gemini_service.send_chat_message(
-                        model_name=model_name,
-                        message=user_text,
-                        history=self.lore_chat_session  # self.lore_chat_session is now our history list
+                        model_name=model_name, message=user_text, history=self.lore_chat_session
                     )
-                    # Update the session with the new, complete history
                     self.lore_chat_session = updated_history
                 else:
                     response_text = "Error: Lore Master session not initialized."
-            else:  # Rules Lawyer
-                if self.gemini_srd_file_uri:  # Check for the URI string
+            else:  # rules
+                if self.gemini_srd_file_uri:
                     srd_prompt = await asyncio.to_thread(self.page.client_storage.get,
                                                          "prompt.rules_lawyer") or SRD_QUERY_PROMPT
-
-                    # Pass the URI string to the service
                     response_text = await self.gemini_service.query_srd_file(
-                        question=user_text,
-                        srd_file_uri=self.gemini_srd_file_uri,  # Pass the URI string
-                        system_prompt=srd_prompt,
+                        question=user_text, srd_file_uri=self.gemini_srd_file_uri, system_prompt=srd_prompt,
                         model_name=model_name
                     )
                 else:
-                    response_text = "Error: SRD document not ready. Please check the application configuration."
+                    response_text = "Error: SRD document not ready."
 
-            self.active_chat_history.controls.append(
+            active_chat_history.controls.append(
                 ft.Row([ft.Icon(ft.Icons.SMART_TOY),
-                        ft.Markdown(response_text, selectable=True, extension_set=ft.MarkdownExtensionSet.GITHUB_WEB, expand=True)])
+                        ft.Markdown(response_text, selectable=True, extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
+                                    expand=True)])
             )
         except Exception as ex:
-            self.active_chat_history.controls.append(ft.Text(f"An error occurred: {ex}", color=ft.Colors.RED))
+            active_chat_history.controls.append(ft.Text(f"An error occurred: {ex}", color=ft.Colors.RED))
         finally:
-            self.send_button.disabled = False
-            self.chat_progress.visible = False
+            # Update the correct controls to re-enable the UI
+            controls["button"].disabled = False
+            controls["progress"].visible = False
             self.update()

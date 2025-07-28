@@ -2,25 +2,21 @@
 
 [project]
 name = "dnd_ai_toolkit"
-version = "1.17.01"
+version = "1.18.00"
 description = "An intelligent Campaign Co-Pilot for Dungeons & Dragons Dungeon Masters."
 authors = [
-    { name = "YOUR_NAME", email = "your@email.com" },
+    { name = "The_Mastaer", email = "mastilak.ondrej@gmail.com" },
 ]
 dependencies = [
-    "flet>=0.23.2",
-    "supabase>=2.5.0",
-    "google-genai>=0.7.2",
-    "python-dotenv>=1.0.1"
+    "flet",
+    "supabase",
+    "google-genai",
+    "python-dotenv"
 ]
 requires-python = ">=3.9"
 
 [tool.flet]
-# This section configures the Flet build process.
-# It tells flet where your main application code is.
-path = "src/main.py"
-
-# Add a path to your assets directory so icons are included.
 assets_dir = "src/assets"
 
-module-name = "src/main.py"
+[tool.flet.app]
+path = "src"
