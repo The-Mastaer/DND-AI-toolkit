@@ -299,7 +299,7 @@ class CharacterFormView(ft.View):
                 "rarity": self.get_randomized_value(self.rarity_dropdown),
                 "background": self.get_randomized_value(self.background_dropdown),
                 "custom_prompt": self.custom_prompt_field.value or "None",
-                "target_language": "English",
+                "target_language": self.selected_language,
                 "world_context": world_context,
                 "campaign_context": campaign_context
             }

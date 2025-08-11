@@ -194,11 +194,11 @@ class GeminiService:
                 },
                 "personality": {
                     "type": "string",
-                    "description": "Describe their traits, demeanor, and motivations, 2-3 sentences"
+                    "description": "Describe their traits, demeanor, and motivations, 3-5 sentences"
                 },
                 "backstory": {
                     "type": "string",
-                    "description": "A brief history of the character, 2-3 sentences"
+                    "description": "A brief history of the character, 5-7 sentences"
                 },
                 "plot_hooks": {
                     "type": "string",
